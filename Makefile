@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-g -std=c99 -pedantic-errors
-SRC=ast.c sym.c lex.c parse.c main.c
+SRC=src/*.c
 EXEC=scc
 
 all:
