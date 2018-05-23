@@ -93,7 +93,7 @@ struct SYMBOL *symtable_search(char *name, int range);
 
 //Symbol-type helper functions
 struct TYPE *type_new();
-struct TYPE *type_clone();
+struct TYPE *type_clone(struct TYPE *from);
 void type_del(struct TYPE *t);
 struct PARAM *param_new();
 void param_del(struct PARAM *p);

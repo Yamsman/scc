@@ -6,7 +6,9 @@
 
 //TODO: struct for holding source file
 
-char *kw[KW_NUM]  = {
+//keywords
+#define KW_NUM 28
+char *kw[KW_NUM] = {
 	"if",
 	"else",
 	"switch",
@@ -41,19 +43,44 @@ char *kw[KW_NUM]  = {
 	"volatile"
 };
 
-char *lx;
-token lx_ahead = {-1, -1, NULL};
+token BLANK_TOKEN = {-1, -1, NULL};
 
-token lex() {
+lexer *lexer_open(char *fname) {
+	lexer *lx = malloc(sizeof(struct LEXER));
+	lx->tgt = malloc(sizeof(struct LEX_TARGET));
+	lx->ahead = BLANK_TOKEN;
+
+	//Read data from file into target
+	FILE *src_f = fopen(fname, "r");
+	fseek(src_f, 0, SEEK_END);
+	int len = ftell(src_f);
+	lx->tgt->buf = malloc(len+1);
+	fseek(src_f, 0, SEEK_SET);
+	fread(lx->tgt->buf, len, 1, src_f);
+
+	lx->tgt->pos = lx->tgt->buf;
+	lx->tgt->prev = NULL;
+	return lx;
+}
+
+void lexer_close(lexer *lx) {
+
+}
+
+void lex_next(lexer *lx) {
 	token t = {-1, -1, NULL};
 
 	//Skip whitespace
-	while (isspace(*lx))
-		lx++;
+	int newline = 0;
+	while (isspace(*lx->tgt->pos)) {
+		if (*lx->tgt->pos = '\n') newline = 1;
+		lx->tgt->pos++;
+	}
 
 	//Get next char
 	int len;
-	char *cur = lx;
+	char *begin = lx->tgt->pos;
+	char *cur = begin;
 	switch (*(cur++)) {
 		case '\0': 	t.type = TOK_END; 	break;
 		case ';': 	t.type = TOK_SEM; 	break;
@@ -67,6 +94,7 @@ token lex() {
 		case ']':	t.type = TOK_RBK;	break;
 		case '\'': 	t.type = TOK_SQT; 	break;
 		case '"':
+			//TODO: whitespace concatenation
 			t.type = TOK_STR;
 			for (;;cur++) {
 				if (*cur == '"') {
@@ -78,14 +106,21 @@ token lex() {
 				}
 			}
 			
-			len = cur - (lx+1);
+			len = cur - (begin+1);
 			t.str = malloc(len+1);
-			memcpy(t.str, (lx+1), len);
+			memcpy(t.str, (begin+1), len);
 			t.str[len] = '\0';
 			cur++;
-
 			break;
-		case '\\': 	t.type = TOK_BSL; 	break;
+		case '#':
+			t.type = TOK_SNS;
+			if (*cur == '#') {
+				cur++, t.type = TOK_DNS;
+			} else if (!newline) {
+				printf("Error: stray '#' in source\n");
+			}
+			break;
+		case '?': 	t.type = TOK_QMK; 	break;
 		case '+':
 			t.type = TOK_ADD;
 			if (*cur == '=') {
@@ -194,16 +229,18 @@ token lex() {
 			cur--;
 			while (isalnum(*cur) || *cur == '_') 
 				cur++;
-			len = cur - lx;
+			len = cur - begin;
 			t.str = malloc(len+1);
-			memcpy(t.str, lx, len);
+			memcpy(t.str, begin, len);
 			t.str[len] = '\0';
 			t.type = TOK_IDENT;
 
 			//Check if matches keyword
 			for (int i=0; i<KW_NUM; i++) {
-				if (!strcmp(t.str, kw[i]))
+				if (!strcmp(t.str, kw[i])) {
 					t.type = TOK_KW_IF+i;
+					break;
+				}
 			}
 			break;
 		case '0': case '1': case '2': case '3': case '4':
@@ -235,37 +272,29 @@ token lex() {
 
 			//TODO: verification
 
-			int llen = cur - lx;
+			int llen = cur - begin;
 			t.str = malloc(llen+1);
-			memcpy(t.str, lx, llen);
+			memcpy(t.str, begin, llen);
 			t.str[llen] = '\0';
 
 			//printf("%s -> %f\n", t.str, atof(t.str));
 			t.type = TOK_CONST;
-
 			break;
-		default:
+		default: 
 			//illegal char
 			t.type = TOK_END;
 			break;
 	}
-	lx = cur;
+	lx->tgt->pos = cur;
+	lx->ahead = t;
 	
-	return t;
-}
-
-void lex_check_kw() {
 	return;
 }
 
-token lex_peek() {	
-	if (lx_ahead.type < 0)
-		lx_ahead = lex();	
-	return lx_ahead;
-}
-
-void lex_adv() {
-	lx_ahead = lex();
+token lex_peek(lexer *lx) {
+	if (lx->ahead.type < 0)
+		lex_next(lx);	
+	return lx->ahead;
 }
 
 int is_type_spec(token t) {
@@ -273,4 +302,14 @@ int is_type_spec(token t) {
 	    t.type - TOK_KW_UNION <= TOK_KW_UNION - TOK_KW_VOID)
 		return 1;
 	return 0;
+}
+
+void lex_adv(lexer *lx) {
+	lex_next(lx);
+
+	//Perform preprocessing
+	//if (lx->ahead.type == TOK_SNS)
+		//lex_ppd(lx);
+
+	return;
 }

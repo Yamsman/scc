@@ -38,6 +38,9 @@ void astn_del(ast_n *node) {
 	//note: don't delete symbols here
 	switch (node->kind) {
 		case DECL:
+			astn_del(node->dat.decl.init);
+			astn_del(node->dat.decl.block);
+			astn_del(node->dat.decl.next);
 			break;
 		case EXPR:
 			astn_del(node->dat.expr.left);

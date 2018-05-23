@@ -74,52 +74,41 @@ enum STMT_KIND {
 };
 
 /*
- * Auxillary node structures
- */
-typedef struct AST_DECL {
-	int kind;
-	struct SYMBOL *sym;
-	struct AST_NODE *init; //expr
-	struct AST_NODE *block; //stmt
-	struct AST_NODE *next; //decl
-} ast_decl;
-
-typedef struct AST_EXPR {
-	int kind;
-	struct SYMBOL *sym;
-	struct AST_NODE *left; //expr
-	struct AST_NODE *right; //expr
-} ast_expr;
-
-typedef struct AST_STMT {
-	int kind;
-	struct AST_NODE *expr; //expr
-	struct AST_NODE *body; //stmt
-	struct AST_NODE *else_body; //stmt
-} ast_stmt;
-
-/*
  * Main node structure
  */
 typedef struct AST_NODE {
-	union {
-		struct AST_DECL decl;
-		struct AST_EXPR expr;
-		struct AST_STMT stmt;
-	} dat;
 	int kind;
+	union {
+		struct AST_DECL {
+			int kind;
+			struct SYMBOL *sym;
+			struct AST_NODE *init; //expr
+			struct AST_NODE *block; //stmt
+			struct AST_NODE *next; //decl
+		} decl;
+
+		struct AST_EXPR {
+			int kind;
+			struct SYMBOL *sym;
+			struct AST_NODE *left; //expr
+			struct AST_NODE *right; //expr
+		} expr;
+
+		struct AST_STMT {
+			int kind;
+			struct AST_NODE *expr; //expr
+			struct AST_NODE *body; //stmt
+			struct AST_NODE *else_body; //stmt
+		} stmt;
+	} dat;
 	struct AST_NODE *next;
 } ast_n;
 
+typedef struct AST_DECL ast_decl;
+typedef struct AST_EXPR ast_expr;
+typedef struct AST_STMT ast_stmt;
+
 ast_n *astn_new(int kind, int s_kind);
 void astn_del(ast_n *node);
-
-//legacy functions
-ast_decl *ast_decl_new();
-void ast_decl_del(ast_decl *node);
-ast_expr *ast_expr_new(int type);
-void ast_expr_del(ast_expr *node);
-ast_stmt *ast_stmt_new(int type);
-void ast_stmt_del(ast_stmt *node);
 
 #endif

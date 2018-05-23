@@ -1,6 +1,9 @@
 #ifndef LEX_H
 #define LEX_H
 
+//lex_adv -> lex_text or lex_macro
+//	if '#' -> lex_preprocess
+
 enum TOK_TYPES {
 	TOK_END,
 	TOK_SEM,
@@ -15,7 +18,8 @@ enum TOK_TYPES {
 	TOK_RBK,
 	TOK_SQT,
 	TOK_DQT,
-	TOK_BSL,
+	TOK_SNS,
+	TOK_DNS,
 	TOK_QMK,
 	TOK_ADD,
 	TOK_SUB,
@@ -92,6 +96,20 @@ enum TOK_TYPES {
 	TOK_KW_CONST,
 	TOK_KW_VOLATILE,
 
+	//Preprocessor directives
+	TOK_PP_DEFINE,
+	TOK_PP_ELIF,
+	TOK_PP_ELSE,
+	TOK_PP_ENDIF,
+	TOK_PP_ERROR,
+	TOK_PP_IF,
+	TOK_PP_IFDEF,
+	TOK_PP_IFNDEF,
+	TOK_PP_INCLUDE,
+	TOK_PP_LINE,
+	TOK_PP_PRAGMA,
+	TOK_PP_UNDEF,
+
 	//Special tokens
 	TOK_CONST,
 	TOK_STR,
@@ -99,24 +117,26 @@ enum TOK_TYPES {
 	TOK_IDENT
 };
 
-//Keywords
-//TODO: replace with switch-case or really anything else
-#define KW_NUM 28
-extern char *kw[KW_NUM];
-
 typedef struct TOKEN {
 	int type;
 	int kw;
 	char *str;
 } token;
 
-extern char *lx;
+typedef struct LEXER {
+	struct LEX_TARGET {
+		char *buf;
+		char *pos;
+		struct LEX_TARGET *prev;
+	} *tgt;
+	struct TOKEN ahead;
+} lexer;
 
-token lex();
-token lex_peek();
-void lex_check_kw();
-void lex_adv();
+struct LEXER *lexer_open(char *fname);
+void lexer_close(struct LEXER *lex);
 
+token lex_peek(struct LEXER *lex);
+void lex_adv(struct LEXER *lex);
 int is_type_spec(struct TOKEN t);
 
 #endif

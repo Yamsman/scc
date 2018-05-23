@@ -6,15 +6,10 @@
 
 int main(int argc, char **argv) {
 	if (argc < 2) return -1;
-	FILE *src_f = fopen(argv[1], "r");
-	fseek(src_f, 0, SEEK_END);
-	int len = ftell(src_f);
-	lx = malloc(len+1);
-	fseek(src_f, 0, SEEK_SET);
-	fread(lx, len, 1, src_f);
+	lexer *lx = lexer_open(argv[1]);
 
 	symtable_init();
-	parse();
+	parse(lx);
 
 	//symtable_add("test");
 	//printf("ss1: %p\n", symtable_search("test", SCOPE_CURRENT));
@@ -27,6 +22,5 @@ int main(int argc, char **argv) {
 	*/
 
 	symtable_close();
-
 	return 0;
 }
