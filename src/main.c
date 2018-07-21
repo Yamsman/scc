@@ -1,15 +1,14 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "lex.h"
 #include "sym.h"
+#include "ast.h"
+#include "lex.h"
 #include "parse.h"
 
 int main(int argc, char **argv) {
 	if (argc < 2) return -1;
-	lexer *lx = lexer_open(argv[1]);
-
-	symtable_init();
-	parse(lx);
+	lexer *lx = lexer_init(argv[1]);
+	ast_n *tree = parse(lx);
 
 	//symtable_add("test");
 	//printf("ss1: %p\n", symtable_search("test", SCOPE_CURRENT));
@@ -21,6 +20,5 @@ int main(int argc, char **argv) {
 	}
 	*/
 
-	symtable_close();
 	return 0;
 }

@@ -3,6 +3,8 @@
 #include <string.h>
 #include <ctype.h>
 #include "lex.h"
+#include "sym.h"
+#include "util/map.h"
 
 //TODO: struct for holding source file
 
@@ -45,21 +47,20 @@ char *kw[KW_NUM] = {
 
 token BLANK_TOKEN = {-1, -1, NULL};
 
-lexer *lexer_open(char *fname) {
+lexer *lexer_init(char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
-	lx->tgt = malloc(sizeof(struct LEX_TARGET));
 	lx->ahead = BLANK_TOKEN;
+	symtable_init(&lx->stb);
 
 	//Read data from file into target
 	FILE *src_f = fopen(fname, "r");
 	fseek(src_f, 0, SEEK_END);
 	int len = ftell(src_f);
-	lx->tgt->buf = malloc(len+1);
+	char *buf = malloc(len+1);
 	fseek(src_f, 0, SEEK_SET);
-	fread(lx->tgt->buf, len, 1, src_f);
+	fread(buf, len, 1, src_f);
 
-	lx->tgt->pos = lx->tgt->buf;
-	lx->tgt->prev = NULL;
+	lexer_tgt_open(lx, buf, 0);
 	return lx;
 }
 
@@ -67,22 +68,68 @@ void lexer_close(lexer *lx) {
 
 }
 
+void lexer_tgt_open(lexer *lx, char *buf, int dealloc) {
+	lex_target *n_tgt = malloc(sizeof(struct LEX_TARGET));
+	n_tgt->dealloc = dealloc;
+	n_tgt->buf = buf;
+	n_tgt->pos = buf;
+	map_init(&n_tgt->exp, 16);
+
+	if (lx->tgt != NULL)
+		n_tgt->prev = lx->tgt;
+	lx->tgt = n_tgt;
+	return;
+}
+
+void lexer_tgt_close(lexer *lx) {
+	lex_target *tgt = lx->tgt;
+	if (tgt->dealloc)
+		free(tgt->buf);
+	map_close(&tgt->exp);
+	lx->tgt = tgt->prev;
+
+	free(tgt);
+	return;
+}
+
+int lex_ident(lexer *lx, token *t) {
+	char *cur = lx->tgt->pos;
+	while (isalnum(*cur) || *cur == '_') 
+		cur++;
+	int len = cur - lx->tgt->pos;
+	t->str = malloc(len+1);
+	memcpy(t->str, lx->tgt->pos, len);
+	t->str[len] = '\0';
+	t->type = TOK_IDENT;
+	return len;
+}
+
 void lex_next(lexer *lx) {
 	token t = {-1, -1, NULL};
+	lex_target *tgt = lx->tgt;
 
 	//Skip whitespace
 	int newline = 0;
-	while (isspace(*lx->tgt->pos)) {
-		if (*lx->tgt->pos = '\n') newline = 1;
-		lx->tgt->pos++;
+reset:	while (isspace(*tgt->pos)) {
+		if (*tgt->pos == '\n') newline = 1;
+		tgt->pos++;
 	}
 
 	//Get next char
 	int len;
-	char *begin = lx->tgt->pos;
+	char *begin = tgt->pos;
 	char *cur = begin;
 	switch (*(cur++)) {
-		case '\0': 	t.type = TOK_END; 	break;
+		case '\0':
+			//End lexing if end has been reached
+			//Otherwise, go to previous target
+			if (tgt->prev == NULL)  {
+				t.type = TOK_END;
+				break;
+			}
+			lexer_tgt_close(lx);
+			tgt = lx->tgt;
+			goto reset;
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ',':	t.type = TOK_CMM; 	break;
 		case '.':	t.type = TOK_PRD; 	break;
@@ -226,21 +273,30 @@ void lex_next(lexer *lx) {
 		case 'P': case 'Q': case 'R': case 'S': case 'T':
 		case 'U': case 'V': case 'W': case 'X': case 'Y':
 		case 'Z': case '_':
+			//Read identifier
 			cur--;
-			while (isalnum(*cur) || *cur == '_') 
-				cur++;
-			len = cur - begin;
-			t.str = malloc(len+1);
-			memcpy(t.str, begin, len);
-			t.str[len] = '\0';
-			t.type = TOK_IDENT;
+			int len = lex_ident(lx, &t);
+			cur += len;
 
 			//Check if matches keyword
+			//TODO: put identifiers inside map
 			for (int i=0; i<KW_NUM; i++) {
 				if (!strcmp(t.str, kw[i])) {
 					t.type = TOK_KW_IF+i;
 					break;
 				}
+			}
+
+			//Check for macro expansion
+			symbol *s = symtable_search(&lx->stb, t.str);
+			if (s != NULL && s->type->kind == TYPE_MACRO) {
+				if (map_get(&tgt->exp, t.str) != NULL) break;
+				tgt->pos = cur;
+				lexer_tgt_open(lx, s->exp, 1);
+				map_insert(&tgt->exp, t.str, s);
+				tgt = lx->tgt;
+				free(t.str);
+				goto reset;
 			}
 			break;
 		case '0': case '1': case '2': case '3': case '4':
@@ -271,7 +327,6 @@ void lex_next(lexer *lx) {
 			}
 
 			//TODO: verification
-
 			int llen = cur - begin;
 			t.str = malloc(llen+1);
 			memcpy(t.str, begin, llen);
@@ -285,15 +340,64 @@ void lex_next(lexer *lx) {
 			t.type = TOK_END;
 			break;
 	}
-	lx->tgt->pos = cur;
+	tgt->pos = cur;
 	lx->ahead = t;
 	
 	return;
 }
 
+//Perform preprocessing
+void lex_ppd(lexer *lx) {
+	//Read directive
+	lex_next(lx);
+	token direc = lex_peek(lx);
+	if (direc.type != TOK_IDENT)
+		puts("invalid preprocessor directive");
+
+	if (!strcmp(direc.str, "define")) {
+		//Read macro name
+		lex_next(lx);
+		token mname = lex_peek(lx);
+		if (mname.type != TOK_IDENT)
+			puts("invalid macro name");
+
+		//Get bounds of macro body
+		char *cur = lx->tgt->pos;
+		char *start, *end;
+		while (isspace(*cur)) cur++;
+		start = cur;
+		while (*cur != '\n') {
+			if (*cur == '\\' && *(cur+1) == '\n')
+				cur++;
+			cur++;
+		}
+		end = cur;
+		while (isspace(*(cur-1))) cur--;
+
+		//Copy body to buffer
+		int len = cur - start;
+		char *buf = malloc(len+1);
+		memcpy(buf, start, len);
+		buf[len] = '\0';
+		for (int i=0; i<len; i++) {
+			if (buf[0] == '#' && buf[1] == '#' ||
+			    buf[len-2] == '#' && buf[len-1] == '#')
+				puts("'##' at beginning or end of macro");
+		}
+
+		//Add to symtable
+		symbol *sym = symtable_add(&lx->stb, mname.str, type_new(TYPE_MACRO));
+		sym->exp = buf;
+		lx->tgt->pos = end;
+	} else {
+		puts("invalid preprocessor directive");
+
+	}
+}
+
 token lex_peek(lexer *lx) {
 	if (lx->ahead.type < 0)
-		lex_next(lx);	
+		lex_adv(lx);
 	return lx->ahead;
 }
 
@@ -305,11 +409,13 @@ int is_type_spec(token t) {
 }
 
 void lex_adv(lexer *lx) {
-	lex_next(lx);
+reset:	lex_next(lx);
 
 	//Perform preprocessing
-	//if (lx->ahead.type == TOK_SNS)
-		//lex_ppd(lx);
+	if (lx->ahead.type == TOK_SNS) {
+		lex_ppd(lx);
+		goto reset;
+	}
 
 	return;
 }

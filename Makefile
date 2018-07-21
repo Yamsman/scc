@@ -1,6 +1,6 @@
 CC=gcc
 CFLAGS=-g -std=c99 -pedantic-errors
-SRC=$(wildcard src/*.c)
+SRC=$(wildcard src/*.c) src/util/map.c
 EXEC=scc
 
 all:

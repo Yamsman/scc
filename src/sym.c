@@ -3,110 +3,81 @@
 #include <string.h>
 #include "sym.h"
 
-//TODO: sym.scope_id -> sym.scope_count, *sym.scope_cur
-//TODO: properly free types/type chains when removing symbols
-struct SYMBOL_TABLE sym;
-
-void symtable_init() {
-	sym.table = malloc(sizeof(struct SYMBOL*)*100);
-	sym.count = 0;
-	sym.max = 100;
-
-	sym.scope = malloc(sizeof(int)*10);
-	sym.scope_index = 0;
-	sym.scope_max = 10;
-
-	sym.scope_nextid = 1;
-	*sym.scope = 0;
+void symtable_init(symtable *stb) {
+	stb->s_global = malloc(sizeof(struct SCOPE));
+	stb->s_cur = stb->s_global;
+	map_init(&stb->s_global->table, 16);
 	return;
 }
 
-void symtable_close() {
-	if (sym.table != NULL)
-		free(sym.table);
-	if (sym.scope != NULL)
-		free(sym.scope);
-	return;
-}
-
-void symtable_scope_enter() {
-	sym.scope_index++;
-	if (sym.scope_index == sym.scope_max) {
-		sym.scope_max *= 2;
-		sym.scope = realloc(sym.scope, sizeof(int)*sym.scope_max);
+//TODO: CLEAN UP PROPERLY
+void symtable_close(symtable *stb) {
+	scope *sc = stb->s_cur;
+	while (sc != NULL) {
+		scope *prev = sc->prev;
+		free(sc);
+		sc = prev;
 	}
-
-	sym.scope[sym.scope_index] = sym.scope_nextid;
-
-	sym.scope_nextid++;
 	return;
 }
 
-void symtable_scope_leave() {
-	sym.scope_index--;
-	if (sym.scope_index < 0) {
-		puts("ERROR: Scope stack underflow");
-		sym.scope_index = 0;
-	}
-
+void symtable_scope_enter(symtable *stb) {
+	scope *sc = malloc(sizeof(struct SCOPE));
+	sc->prev = stb->s_cur;
+	map_init(&sc->table, 16);
+	stb->s_cur = sc;
 	return;
 }
 
-//TODO: types
-symbol *symtable_add(char *name) {
+void symtable_scope_leave(symtable *stb) {
+	scope *sc = stb->s_cur;
+	map_close(&sc->table);
+	stb->s_cur = sc->prev;
+	free(sc);
+	return;
+}
+
+symbol *symtable_add(symtable *stb, char *name, s_type *type) {
 	//Search current scope for conflicts
-	if (symtable_search(name, SCOPE_CURRENT)) {
+	if (symtable_search(stb, name)) {
 		printf("ERROR: Redefinition of variable '%s'\n", name);
 		return NULL;
 	}
 
-	//Create and add a new symbol
+	//Create a new symbol
 	symbol *s = malloc(sizeof(struct SYMBOL));
-	s->scope_id = sym.scope[sym.scope_index];
 	s->name = name;
-	s->type = NULL;
-	s->btype = NULL;
-
-	sym.table[sym.count++] = s;
-	if (sym.count >= sym.max) {
-		sym.max *= 2;
-		sym.table = realloc(sym.table, sym.max);
+	s->type = type;
+	if (type->kind == TYPE_FUNC) {
+		map_init(&s->lvars, 16);
 	}
+
+	//Get base type from chain
+	s_type *bt_ptr = type;
+	while (bt_ptr->ref != NULL) 
+		bt_ptr = bt_ptr->ref;
+	s->btype = bt_ptr;
+
+	//Add symbol to table
+	map_insert(&stb->s_cur->table, name, s);
+	if (stb->func != NULL)
+		map_insert(&stb->func->lvars, name, s);
 
 	return s;
 }
 
-//TODO: rewrite
-symbol *symtable_search(char *name, int s_type) {
-	int range = -1;
-	switch (s_type) {
-		case SCOPE_CURRENT: range = 1; break;
-		case SCOPE_VISIBLE: range = sym.scope_index+1; break;
+symbol *symtable_search(symtable *stb, char *name) {
+	scope *sc_ptr = stb->s_cur;
+	while (sc_ptr != NULL) {
+		symbol *s = map_get(&sc_ptr->table, name);
+		if (s != NULL) return s;
+		sc_ptr = sc_ptr->prev;
 	}
-
-	for (int i=0; i<sym.count; i++) {
-		int *scope_id = &sym.scope[sym.scope_index];
-		int scope_match = 0;
-		for (int j=range; j>0; j--) {
-			if (*scope_id == sym.table[i]->scope_id) {
-				scope_match = 1;
-				break;
-			}
-			scope_id--;	
-		}
-
-		if ((scope_match || s_type == SCOPE_ALL) && !strcmp(name, sym.table[i]->name))
-			return sym.table[i];
-	}
-
 	return NULL;
 }
 
 void symtable_print() {
-	for (int i=0; i<sym.count; i++) {
-		symbol *s = sym.table[i];
-		printf("%i: name: \"%s\", scope_id: %i\n", i, s->name, s->scope_id);
-	}
+
 	return;
 }
 

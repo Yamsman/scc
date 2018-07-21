@@ -1,15 +1,13 @@
 #ifndef SYM_TABLE_H
 #define SYM_TABLE_H
 
-//TODO: store string hashes alongside symbols for faster comparison
-enum SCOPE_RANGE {
-	SCOPE_CURRENT,
-	SCOPE_VISIBLE,
-	SCOPE_ALL
-};
+#include "util/map.h"
 
+//TODO: store string hashes alongside symbols for faster comparison
 enum TYPE_KIND {
 	TYPE_UNDEF,
+	TYPE_MACRO,
+	TYPE_LABEL,
 	TYPE_PTR,
 	TYPE_FUNC,
 
@@ -35,64 +33,61 @@ enum TYPE_CLASS {
 };
 
 typedef struct TYPE {
-	int kind;
-	int s_class;
+	int kind;		//Variable kind
+	int s_class;		//Variable class
 	
-	int is_signed;
+	int is_signed;		//Variable qualifiers
 	int is_const;
 	int is_volatile;
 
 	//Pointer data
-	struct TYPE *ref;
-	int ref_len;
+	struct TYPE *ref;	//Next in reference chain
+	int ref_len;		//Length if array
 
 	//Function data
-	struct PARAM *param;
-	struct TYPE *ret;
+	struct PARAM *param;	//Beginning of parameter list
+	struct TYPE *ret;	//Return type
 
 	//Struct/union data
-	struct PARAM *memb;	
+	struct PARAM *memb;	//List of struct members
 } s_type;
 
 //Layout is identical for both function parameters & struct members
 typedef struct PARAM {
-	struct TYPE *type;
-	char *name;
-	struct PARAM *next;
+	char *name;		//Parameter name
+	struct TYPE *type;	//Parameter type
+	struct PARAM *next;	//Next parameter in list
 } s_param;
 
 typedef struct SYMBOL {
-	int scope_id;
-	char *name;
-	struct TYPE *type;
-	struct TYPE *btype;
+	char *name;		//Symbol name
+	char *exp;		//Macro expansion
+	struct TYPE *type;	//Type (with reference chain)
+	struct TYPE *btype;	//Base type
+	struct MAP lvars;	//Function variables
+	struct MAP labels;	//Function labels
 } symbol;
 
-struct SYMBOL_TABLE {
-	struct SYMBOL **table;
-	int count;
-	int max;
+typedef struct SCOPE {
+	struct MAP table;	//Map containing symbols
+	struct SCOPE *prev;	//Previous scope
+} scope;
 
-	//Stack for managing scope IDs
-	int *scope;
-	int scope_index;
-	int scope_max;
-	int scope_nextid;
-};
+typedef struct SYMTABLE {
+	struct SCOPE *s_cur;	//Current scope
+	struct SCOPE *s_global;	//Global scope
+	struct SYMBOL *func;	//Current function
+} symtable;
 
-extern struct SYMBOL_TABLE sym;
-void symtable_init();
-void symtable_close();
-void symtable_print();
-
-void symtable_scope_enter();
-void symtable_scope_leave();
-
-struct SYMBOL *symtable_add(char *name/*, type */);
-struct SYMBOL *symtable_search(char *name, int range);
+void symtable_init(struct SYMTABLE *stb);
+void symtable_close(struct SYMTABLE *stb);
+void symtable_scope_enter(struct SYMTABLE *stb);
+void symtable_scope_leave(struct SYMTABLE *stb);
+struct SYMBOL *symtable_add(struct SYMTABLE *stb, char *name, struct TYPE *type);
+struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 
 //Symbol-type helper functions
-struct TYPE *type_new();
+struct TYPE *type_new(int kind);
 struct TYPE *type_clone(struct TYPE *from);
 void type_del(struct TYPE *t);
 struct PARAM *param_new();

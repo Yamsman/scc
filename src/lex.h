@@ -1,6 +1,8 @@
 #ifndef LEX_H
 #define LEX_H
 
+#include "sym.h"
+
 //lex_adv -> lex_text or lex_macro
 //	if '#' -> lex_preprocess
 
@@ -123,20 +125,27 @@ typedef struct TOKEN {
 	char *str;
 } token;
 
+typedef struct LEX_TARGET {
+	char *buf;
+	char *pos;
+	int dealloc; //Deallocate when target is closed
+	struct MAP exp;	//List of expanded macros
+	struct LEX_TARGET *prev;
+} lex_target;
+
 typedef struct LEXER {
-	struct LEX_TARGET {
-		char *buf;
-		char *pos;
-		struct LEX_TARGET *prev;
-	} *tgt;
+	struct LEX_TARGET *tgt;
 	struct TOKEN ahead;
+	struct SYMTABLE stb;
 } lexer;
 
-struct LEXER *lexer_open(char *fname);
-void lexer_close(struct LEXER *lex);
+struct LEXER *lexer_init(char *fname);
+void lexer_close(struct LEXER *lx);
+void lexer_tgt_open(struct LEXER *lx, char *buf, int dealloc);
+void lexer_tgt_close(struct LEXER *lx);
 
-token lex_peek(struct LEXER *lex);
-void lex_adv(struct LEXER *lex);
+token lex_peek(struct LEXER *lx);
+void lex_adv(struct LEXER *lx);
 int is_type_spec(struct TOKEN t);
 
 #endif

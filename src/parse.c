@@ -51,7 +51,7 @@ ast_n *parse_stmt_jump(lexer *lx);
 
 ast_n *parse(lexer *lx) {
 	//TODO: rewrite
-	ast_n *node; // = parse_stmt();
+	ast_n *node = NULL; // = parse_stmt();
 	ast_n *cur = NULL;
 	while (lex_peek(lx).type != TOK_END) {
 		//Check if the next item is a function definition or a declaration
@@ -80,6 +80,7 @@ ast_n *parse(lexer *lx) {
 		lx->tgt->pos = save;
 
 		ast_n *n;
+		n->next = NULL;
 		switch (fdef) {
 			case 1: n = parse_fdef(lx); break;
 			case 0: n = parse_decl(lx); break;
@@ -87,9 +88,9 @@ ast_n *parse(lexer *lx) {
 
 		if (node == NULL) {
 			node = n;
-			cur = n;
+		} else {
+			cur->next = n;
 		}
-		cur->next = n;
 		cur = n;
 	}
 
@@ -295,7 +296,7 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
 ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	//Parse declarator
 	char *vname = NULL;
-	s_type *t = parse_decltr(lx, type_clone(base_type), &vname);
+	s_type *vtype = parse_decltr(lx, type_clone(base_type), &vname);
 
 	//Create a new symbol
 	//TODO: check for missing symbol name as a result of allowing parse_decltr to return
@@ -303,7 +304,7 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	if (vname == NULL) {
 		//Missing symbol error
 	}
-	symbol *s = symtable_add(vname); //TODO: type
+	symbol *s = symtable_add(&lx->stb, vname, vtype);
 	if (!s) { //If duplicate exists
 		//error handling?
 	}
@@ -327,9 +328,7 @@ s_param *parse_fparam(lexer *lx) {
 	s_type *base_type = parse_decl_spec(lx);
 
 	//Parse declarator
-	//TODO: symtable integration
 	s_type *type = parse_decltr(lx, type_clone(base_type), &vname);
-	symtable_add(vname); //temporary
 
 	//Create parameter and return
 	return param_new(type, vname);
@@ -362,16 +361,23 @@ ast_n *parse_fdef(lexer *lx) {
 	//Get declarator
 	char *f_name;
 	s_type *f_type = parse_decltr(lx, r_type, &f_name);
-	puts(f_name);
-	free(f_name);
+	f_type->ret = r_type;
 
-	//Create a symbol (TODO)
-	symbol *s = NULL;
+	//Create symbol and enter function scope
+	symbol *s = symtable_add(&lx->stb, f_name, f_type);
+	symtable_scope_enter(&lx->stb);
+	for (s_param *p = f_type->param; p != NULL; p = p->next)
+		symtable_add(&lx->stb, p->name, p->type);
+	lx->stb.func = s;
 
-	//Create node
+	//Create node and parse body
 	ast_n *node = astn_new(DECL, DECL_FUNC);
 	node->dat.decl.sym = s;
 	node->dat.decl.block = parse_stmt_cmpd(lx);
+
+	//Leave function scope
+	symtable_scope_leave(&lx->stb);
+	lx->stb.func = NULL;
 
 	return node;
 }
@@ -839,7 +845,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT: //TODO: improve handling of undefined variables
 			lex_adv(lx);
-			symbol *s = symtable_search(t.str, SCOPE_VISIBLE);
+			symbol *s = symtable_search(&lx->stb, t.str);
 			node = astn_new(EXPR, EXPR_IDENT);
 			if (s != NULL) {
 				node->dat.expr.sym = s;
