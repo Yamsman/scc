@@ -38,10 +38,20 @@ void symtable_scope_leave(symtable *stb) {
 }
 
 symbol *symtable_add(symtable *stb, char *name, s_type *type) {
-	//Search current scope for conflicts
-	if (symtable_search(stb, name)) {
-		printf("ERROR: Redefinition of variable '%s'\n", name);
-		return NULL;
+	//Check for conflicts in current scope
+	symbol *dup = map_get(&stb->s_cur->table, name);
+	if (dup != NULL) {
+		if (!type_compare(dup->type, type)) {
+			printf("ERROR: Conflicting types for '%s'\n", name);
+			return NULL;
+		}
+
+		if (stb->s_cur == stb->s_global) {
+			return dup;
+		} else {
+			printf("ERROR: Redeclaration of '%s'\n", name);
+			return NULL;
+		}
 	}
 
 	//Create a new symbol
@@ -49,6 +59,7 @@ symbol *symtable_add(symtable *stb, char *name, s_type *type) {
 	s->name = name;
 	s->type = type;
 	if (type->kind == TYPE_FUNC) {
+		s->fbody = NULL;
 		map_init(&s->lvars, 16);
 	}
 
@@ -104,6 +115,57 @@ s_type *type_clone(s_type *from) {
 	s_type *type = malloc(sizeof(struct TYPE));
 	*type = *from;
 	return type;
+}
+
+int type_compare_noref(s_type *a, s_type *b) {
+	if (a->kind != b->kind) return 0;
+	if (a->s_class != b->s_class) return 0;
+
+	//TODO: qualifiers
+	if (a->ref_len != b->ref_len) return 0;
+
+	if (a->kind == TYPE_FUNC) {
+		s_param *i = a->param;
+		s_param *j = b->param;
+		while (i != NULL) {
+			if (j == NULL) return 0;
+			if (!type_compare(i->type, j->type)) return 0;
+			i = i->next;
+			j = j->next;
+		}
+		if (j != NULL) return 0;
+		if (!type_compare(a->ret, b->ret)) return 0;
+	} else if (a->memb != NULL) {
+		s_param *i = a->memb;
+		s_param *j = b->memb;
+		while (i != NULL) {
+			if (j == NULL) return 0;
+			if (!type_compare(i->type, j->type)) return 0;
+			i = i->next;
+			j = j->next;
+		}
+		if (j != NULL) return 0;
+	}
+
+	return 1;	
+}
+
+int type_compare(s_type *a, s_type *b) {
+	if (a == NULL || b == NULL) return 0;
+	if (!type_compare_noref(a, b)) return 0;
+
+	//Compare reference types
+	s_type *i = a->ref;
+	s_type *j = b->ref;
+	while (i != NULL) {
+		if (j == NULL) return 0;
+		if (!type_compare_noref(i, j)) return 0;
+		i = i->ref;
+		j = j->ref;
+	}
+	if (j != NULL) return 0;
+
+	return 1;
 }
 
 void type_del(s_type *t) {

@@ -51,50 +51,57 @@ ast_n *parse_stmt_jump(lexer *lx);
 
 ast_n *parse(lexer *lx) {
 	//TODO: rewrite
-	ast_n *node = NULL; // = parse_stmt();
+	ast_n *list = NULL; // = parse_stmt();
 	ast_n *cur = NULL;
 	while (lex_peek(lx).type != TOK_END) {
-		//Check if the next item is a function definition or a declaration
-		//TODO: replace with proper unget functionality
-		char *save = lx->tgt->pos;
-		int fdef = 0;
-		int pcl = 0;
+		//Look ahead to see if next is decl or function def
+		int par = 0;
+		int fdef = -1;
+		token_n *toklist = NULL;
 		for (;;) {
-			if (*lx->tgt->pos == '{') {
-				if (pcl == 1)
-					fdef = 1;
-				else
-					fdef = 0;
-				break;
-			} else if (*lx->tgt->pos == ')') {
-				pcl = 1;
-			} else if (*lx->tgt->pos == ';') {
-				fdef = 0;
-				break;
-			} else if (*lx->tgt->pos == '\0') {
-				fdef = -1;
-				break;
+			token t = lex_peek(lx);
+			switch (t.type) {
+				case TOK_RPR: par = 1;    break;
+				case TOK_EQ:  fdef = 0;   break;
+				case TOK_SEM: fdef = 0;   break; 
+				case TOK_LBR: fdef = par; break;
+				case TOK_END:
+					puts("premature end of input");
+					break;
 			}
-			lx->tgt->pos++;
-		}
-		lx->tgt->pos = save;
+			token_n *tn = make_tok_node(t);
+			tn->next = toklist;
+			toklist = tn;
 
-		ast_n *n;
-		n->next = NULL;
+			if (fdef >= 0) break;
+			lex_adv(lx);
+		}
+
+		//Unget tokens
+		while (toklist != NULL) {
+			token_n *next = toklist->next;
+			lex_unget(lx, toklist);
+			toklist = next;
+		}
+
+		//Parse accordingly
+		ast_n *node;
 		switch (fdef) {
-			case 1: n = parse_fdef(lx); break;
-			case 0: n = parse_decl(lx); break;
+			case 0: node = parse_decl(lx); break;
+			case 1: node = parse_fdef(lx); break;
 		}
+		node->next = NULL;
 
-		if (node == NULL) {
-			node = n;
+		//Add declaration/function definition to list
+		if (list == NULL) {
+			list = node;
 		} else {
-			cur->next = n;
+			cur->next = node;
 		}
-		cur = n;
+		cur = node;
 	}
 
-	return node;
+	return list;
 }
 
 /*
@@ -280,15 +287,12 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
 	}
 
 	//Do not recurse to parse_decltr after this point
-	//Expect identifier
-	if (lex_peek(lx).type != TOK_IDENT) {
-		//free type
-		return NULL;
-	}
+	//Read vname
 	token t = lex_peek(lx);
-	lex_adv(lx);
-	*vname = t.str;
-
+	if (t.type == TOK_IDENT) {
+		lex_adv(lx);
+		*vname = t.str;
+	}
 	return parse_decltr_back(lx, type);
 }
 
@@ -299,11 +303,12 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	s_type *vtype = parse_decltr(lx, type_clone(base_type), &vname);
 
 	//Create a new symbol
-	//TODO: check for missing symbol name as a result of allowing parse_decltr to return
-	//	NULL in order to implement parse_fparam
+	//parse_decltr may not set vname in order to implement parameters
 	if (vname == NULL) {
-		//Missing symbol error
+		printf("ERROR: Expected variable name\n");
+		return NULL;
 	}
+
 	symbol *s = symtable_add(&lx->stb, vname, vtype);
 	if (!s) { //If duplicate exists
 		//error handling?
@@ -363,8 +368,13 @@ ast_n *parse_fdef(lexer *lx) {
 	s_type *f_type = parse_decltr(lx, r_type, &f_name);
 	f_type->ret = r_type;
 
-	//Create symbol and enter function scope
+	//Create symbol
 	symbol *s = symtable_add(&lx->stb, f_name, f_type);
+	if (s->fbody != NULL) {
+		printf("ERROR: Redefinition of '%s'\n", f_name);
+	}
+
+	//Enter function scope
 	symtable_scope_enter(&lx->stb);
 	for (s_param *p = f_type->param; p != NULL; p = p->next)
 		symtable_add(&lx->stb, p->name, p->type);
@@ -380,6 +390,55 @@ ast_n *parse_fdef(lexer *lx) {
 	lx->stb.func = NULL;
 
 	return node;
+}
+
+s_param *parse_sdef_body(lexer *lx) {
+	//Advance past '{'
+	lex_adv(lx);
+
+	//Parse list of declarations
+	s_param *m_list = NULL;
+	s_param *m_prev = NULL;
+	while (lex_peek(lx).type != TOK_RBR) {
+		if (lex_peek(lx).type == TOK_END) {
+			printf("ERROR: Expected '}' before end of file\n");
+		}
+
+		//Get type
+		//TODO: no type classes when parsing for specifier
+		char *mname = NULL;
+		s_type *base_type = parse_decl_spec(lx);
+
+		//Parse declarator
+		//TODO: bitfields
+		s_type *mtype = parse_decltr(lx, type_clone(base_type), &mname);
+		if (mname != NULL) {
+			//Create new member
+			s_param *memb_ex = param_new(mtype, mname);
+			if (m_list == NULL) {
+				m_list = memb_ex;
+				m_prev = m_list;
+			} else {
+				m_prev->next = memb_ex;
+				m_prev = memb_ex;
+			}
+		} else {
+			printf("ERROR: Declaration declares nothing\n");
+		}
+
+		//Expect ';'
+		if (lex_peek(lx).type != TOK_SEM) {
+			printf("ERROR: Expected ';' before ...\n");
+		}
+		lex_adv(lx);
+	}
+
+	if (lex_peek(lx).type != TOK_RBR) {
+		printf("ERROR: Expected '}' before ...\n");
+	}
+	lex_adv(lx);
+
+	return m_list;
 }
 
 //Parse a struct type
@@ -398,55 +457,39 @@ s_type *parse_sdef(lexer *lx) {
 	}
 	lex_adv(lx);
 
-	//Get identifier
+	//Get identifier and member list
 	char *tname = NULL;
+	s_param *m_list = NULL;
 	if (lex_peek(lx).type == TOK_IDENT) {
 		tname = lex_peek(lx).str;
 		lex_adv(lx);
 	}
-	
-	//perform lookup to see if struct exists in symbol table
-	
-	//Get list of members
-	if (lex_peek(lx).type == TOK_LBR) {
-		lex_adv(lx);
+	if (lex_peek(lx).type == TOK_LBR)
+		m_list = parse_sdef_body(lx);
+	type->memb = m_list;
 
-		s_param *memb_prev = NULL;
-		while (lex_peek(lx).type != TOK_RBR) {
-			//Get type
-			//TODO: no type classes when parsing for specifier
-			char *mname = NULL;
-			s_type *base_type = parse_decl_spec(lx);
-
-			//Parse declarator
-			//TODO: bitfields
-			s_type *mtype = parse_decltr(lx, type_clone(base_type), &mname);
-
-			if (mname == NULL) {
-				//Expected identifier before...
+	/* 
+	 * Four cases:
+	 * struct is anonymous (list but no name)
+	 * struct is already defined (name but no list)
+	 * struct needs to be defined (name and list)
+	 * invalid (no name and no list)
+	 */
+	if (tname == NULL) {
+		if (m_list == NULL) {
+			printf("ERROR: Expected '{' or identifier before ...\n");
+			return NULL;
+		} 
+	} else {
+		symbol *s = NULL;
+		if (m_list == NULL) {
+			s = symtable_search(&lx->stb, tname);
+			if (s == NULL) {
+				printf("ERROR: Undefined struct '%s'\n", tname);
+				return NULL;
 			}
-
-			//Create new member
-			s_param *memb_ex = param_new(mtype, mname);
-			if (type->memb == NULL) {
-				type->memb = memb_ex;
-				memb_prev = type->memb;
-			} else {
-				memb_prev->next = memb_ex;
-				memb_prev = memb_ex;
-			}
-
-			//Expect ';'
-			if (lex_peek(lx).type != TOK_SEM) {
-				//Expected ';' before...
-			}
-			lex_adv(lx);
 		}
-
-		if (lex_peek(lx).type != TOK_RBR) {
-			//Expected '}' before...
-		}
-		lex_adv(lx);
+		s = symtable_add(&lx->stb, tname, type);
 	}
 
 	return type;

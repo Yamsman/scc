@@ -125,6 +125,11 @@ typedef struct TOKEN {
 	char *str;
 } token;
 
+typedef struct TOKEN_NODE {
+	struct TOKEN t;
+	struct TOKEN_NODE *next;
+} token_n;
+
 typedef struct LEX_TARGET {
 	char *buf;
 	char *pos;
@@ -134,9 +139,10 @@ typedef struct LEX_TARGET {
 } lex_target;
 
 typedef struct LEXER {
-	struct LEX_TARGET *tgt;
-	struct TOKEN ahead;
-	struct SYMTABLE stb;
+	struct LEX_TARGET *tgt;	//Input stack
+	struct TOKEN_NODE *pre;	//Pre-lexed tokens
+	struct TOKEN ahead;	//Current token
+	struct SYMTABLE stb;	//Symbol table
 } lexer;
 
 struct LEXER *lexer_init(char *fname);
@@ -144,8 +150,11 @@ void lexer_close(struct LEXER *lx);
 void lexer_tgt_open(struct LEXER *lx, char *buf, int dealloc);
 void lexer_tgt_close(struct LEXER *lx);
 
-token lex_peek(struct LEXER *lx);
+struct TOKEN lex_peek(struct LEXER *lx);
 void lex_adv(struct LEXER *lx);
+void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);
+
 int is_type_spec(struct TOKEN t);
+struct TOKEN_NODE *make_tok_node(struct TOKEN t);
 
 #endif

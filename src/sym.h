@@ -61,11 +61,15 @@ typedef struct PARAM {
 
 typedef struct SYMBOL {
 	char *name;		//Symbol name
-	char *exp;		//Macro expansion
 	struct TYPE *type;	//Type (with reference chain)
 	struct TYPE *btype;	//Base type
+
+	//Data
+	struct AST_N *fbody;	//Function body
 	struct MAP lvars;	//Function variables
 	struct MAP labels;	//Function labels
+
+	char *mac_exp;		//Macro expansion
 } symbol;
 
 typedef struct SCOPE {
@@ -89,7 +93,9 @@ struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 //Symbol-type helper functions
 struct TYPE *type_new(int kind);
 struct TYPE *type_clone(struct TYPE *from);
+int type_compare(struct TYPE *a, struct TYPE *b);
 void type_del(struct TYPE *t);
+
 struct PARAM *param_new();
 void param_del(struct PARAM *p);
 

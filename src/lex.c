@@ -49,6 +49,8 @@ token BLANK_TOKEN = {-1, -1, NULL};
 
 lexer *lexer_init(char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
+	lx->tgt = NULL;
+	lx->pre = NULL;
 	lx->ahead = BLANK_TOKEN;
 	symtable_init(&lx->stb);
 
@@ -60,7 +62,7 @@ lexer *lexer_init(char *fname) {
 	fseek(src_f, 0, SEEK_SET);
 	fread(buf, len, 1, src_f);
 
-	lexer_tgt_open(lx, buf, 0);
+	lexer_tgt_open(lx, buf, 1);
 	return lx;
 }
 
@@ -107,6 +109,15 @@ int lex_ident(lexer *lx, token *t) {
 void lex_next(lexer *lx) {
 	token t = {-1, -1, NULL};
 	lex_target *tgt = lx->tgt;
+
+	//Use ungotten tokens
+	token_n *pre = lx->pre;
+	if (pre != NULL) {
+		lx->ahead = pre->t;
+		lx->pre = pre->next;
+		free(pre);
+		return;
+	}
 
 	//Skip whitespace
 	int newline = 0;
@@ -292,7 +303,7 @@ reset:	while (isspace(*tgt->pos)) {
 			if (s != NULL && s->type->kind == TYPE_MACRO) {
 				if (map_get(&tgt->exp, t.str) != NULL) break;
 				tgt->pos = cur;
-				lexer_tgt_open(lx, s->exp, 1);
+				lexer_tgt_open(lx, s->mac_exp, 0);
 				map_insert(&tgt->exp, t.str, s);
 				tgt = lx->tgt;
 				free(t.str);
@@ -387,7 +398,7 @@ void lex_ppd(lexer *lx) {
 
 		//Add to symtable
 		symbol *sym = symtable_add(&lx->stb, mname.str, type_new(TYPE_MACRO));
-		sym->exp = buf;
+		sym->mac_exp = buf;
 		lx->tgt->pos = end;
 	} else {
 		puts("invalid preprocessor directive");
@@ -401,6 +412,22 @@ token lex_peek(lexer *lx) {
 	return lx->ahead;
 }
 
+void lex_adv(lexer *lx) {
+reset:	lex_next(lx);
+	if (lx->ahead.type == TOK_SNS) {
+		lex_ppd(lx);
+		goto reset;
+	}
+	return;
+}
+
+void lex_unget(lexer *lx, token_n *n) {
+	n->next = lx->pre;
+	lx->pre = n;
+	lx->ahead = BLANK_TOKEN; //force lex_peek to call lex_next
+	return;
+}
+
 int is_type_spec(token t) {
 	if (t.type - TOK_KW_VOID >= 0 && 
 	    t.type - TOK_KW_UNION <= TOK_KW_UNION - TOK_KW_VOID)
@@ -408,14 +435,9 @@ int is_type_spec(token t) {
 	return 0;
 }
 
-void lex_adv(lexer *lx) {
-reset:	lex_next(lx);
-
-	//Perform preprocessing
-	if (lx->ahead.type == TOK_SNS) {
-		lex_ppd(lx);
-		goto reset;
-	}
-
-	return;
+token_n *make_tok_node(token t) {
+	token_n *node = malloc(sizeof(struct TOKEN_NODE));
+	node->t = t;
+	node->next = NULL;
+	return node;
 }
