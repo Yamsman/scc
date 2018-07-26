@@ -8,6 +8,7 @@
 int main(int argc, char **argv) {
 	if (argc < 2) return -1;
 	lexer *lx = lexer_init(argv[1]);
+	if (!lx) return 0;
 	ast_n *tree = parse(lx);
 
 	//symtable_add("test");

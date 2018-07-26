@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sym.h"
+#include "util/map.h"
 
 void symtable_init(symtable *stb) {
 	stb->s_global = malloc(sizeof(struct SCOPE));
@@ -37,7 +38,7 @@ void symtable_scope_leave(symtable *stb) {
 	return;
 }
 
-symbol *symtable_add(symtable *stb, char *name, s_type *type) {
+symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 	//Check for conflicts in current scope
 	symbol *dup = map_get(&stb->s_cur->table, name);
 	if (dup != NULL) {
@@ -75,6 +76,10 @@ symbol *symtable_add(symtable *stb, char *name, s_type *type) {
 		map_insert(&stb->func->lvars, name, s);
 
 	return s;
+}
+
+void symtable_undef(symtable *stb, char *name) {
+	
 }
 
 symbol *symtable_search(symtable *stb, char *name) {

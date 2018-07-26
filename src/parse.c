@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "lex.h"
 #include "sym.h"
 #include "ast.h"
+#include "lex.h"
 #include "parse.h"
 
 //TODO: remove intermediate decl/expr/stmt variables if only used a few times
@@ -67,7 +67,7 @@ ast_n *parse(lexer *lx) {
 				case TOK_LBR: fdef = par; break;
 				case TOK_END:
 					puts("premature end of input");
-					break;
+					return NULL;
 			}
 			token_n *tn = make_tok_node(t);
 			tn->next = toklist;
@@ -309,7 +309,7 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 		return NULL;
 	}
 
-	symbol *s = symtable_add(&lx->stb, vname, vtype);
+	symbol *s = symtable_def(&lx->stb, vname, vtype);
 	if (!s) { //If duplicate exists
 		//error handling?
 	}
@@ -369,7 +369,7 @@ ast_n *parse_fdef(lexer *lx) {
 	f_type->ret = r_type;
 
 	//Create symbol
-	symbol *s = symtable_add(&lx->stb, f_name, f_type);
+	symbol *s = symtable_def(&lx->stb, f_name, f_type);
 	if (s->fbody != NULL) {
 		printf("ERROR: Redefinition of '%s'\n", f_name);
 	}
@@ -377,7 +377,7 @@ ast_n *parse_fdef(lexer *lx) {
 	//Enter function scope
 	symtable_scope_enter(&lx->stb);
 	for (s_param *p = f_type->param; p != NULL; p = p->next)
-		symtable_add(&lx->stb, p->name, p->type);
+		symtable_def(&lx->stb, p->name, p->type);
 	lx->stb.func = s;
 
 	//Create node and parse body
@@ -489,7 +489,7 @@ s_type *parse_sdef(lexer *lx) {
 				return NULL;
 			}
 		}
-		s = symtable_add(&lx->stb, tname, type);
+		s = symtable_def(&lx->stb, tname, type);
 	}
 
 	return type;

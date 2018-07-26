@@ -87,7 +87,8 @@ void symtable_init(struct SYMTABLE *stb);
 void symtable_close(struct SYMTABLE *stb);
 void symtable_scope_enter(struct SYMTABLE *stb);
 void symtable_scope_leave(struct SYMTABLE *stb);
-struct SYMBOL *symtable_add(struct SYMTABLE *stb, char *name, struct TYPE *type);
+struct SYMBOL *symtable_def(struct SYMTABLE *stb, char *name, struct TYPE *type);
+void symtable_undef(symtable *stb, char *name);
 struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 
 //Symbol-type helper functions

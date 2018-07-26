@@ -101,10 +101,8 @@ enum TOK_TYPES {
 	//Preprocessor directives
 	TOK_PP_DEFINE,
 	TOK_PP_ELIF,
-	TOK_PP_ELSE,
 	TOK_PP_ENDIF,
 	TOK_PP_ERROR,
-	TOK_PP_IF,
 	TOK_PP_IFDEF,
 	TOK_PP_IFNDEF,
 	TOK_PP_INCLUDE,
@@ -119,6 +117,11 @@ enum TOK_TYPES {
 	TOK_IDENT
 };
 
+enum TGT_TYPE {
+	TGT_FILE,
+	TGT_MACRO
+};
+
 typedef struct TOKEN {
 	int type;
 	int kw;
@@ -131,10 +134,10 @@ typedef struct TOKEN_NODE {
 } token_n;
 
 typedef struct LEX_TARGET {
+	char *name;
+	int type;
 	char *buf;
 	char *pos;
-	int dealloc; //Deallocate when target is closed
-	struct MAP exp;	//List of expanded macros
 	struct LEX_TARGET *prev;
 } lex_target;
 
@@ -146,8 +149,9 @@ typedef struct LEXER {
 } lexer;
 
 struct LEXER *lexer_init(char *fname);
+int lex_open_file(lexer *lx, char *fname);
 void lexer_close(struct LEXER *lx);
-void lexer_tgt_open(struct LEXER *lx, char *buf, int dealloc);
+void lexer_tgt_open(lexer *lx, char *name, int type, char *buf);
 void lexer_tgt_close(struct LEXER *lx);
 
 struct TOKEN lex_peek(struct LEXER *lx);
