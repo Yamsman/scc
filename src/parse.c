@@ -893,8 +893,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			if (s != NULL) {
 				node->dat.expr.sym = s;
 			} else {
-				printf("Undefined variable \"%s\"\n", t.str);
-				//undefined variable
+				printf("ERROR: Undeclared variable \"%s\"\n", t.str);
 			}
 
 			return node;
@@ -943,6 +942,19 @@ ast_n *parse_stmt(lexer *lx) {
 		case TOK_LBR:
 			node = parse_stmt_cmpd(lx);
 			break;
+		case TOK_IDENT: {
+			//Check for label
+			//TODO: clean
+			token_n *tn = make_tok_node(lex_peek(lx));
+			lex_adv(lx);
+			token t = lex_peek(lx);
+			lex_unget(lx, make_tok_node(t));
+			lex_unget(lx, tn);
+			if (t.type == TOK_COL) {
+				node = parse_stmt_label(lx);
+				break;
+			}
+			} //Fall through
 		default:
 			node = parse_stmt_expr(lx);
 			break;
@@ -987,7 +999,9 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 	if (lex_peek(lx).type == TOK_RBR)
 		lex_adv(lx);
 
-	return base;
+	ast_n *head = astn_new(STMT, STMT_CMPD);
+	head->next = base;
+	return head;
 }
 
 ast_n *parse_stmt_expr(lexer *lx) {
@@ -1149,10 +1163,12 @@ ast_n *parse_stmt_iteration(lexer *lx) {
 ast_n *parse_stmt_label(lexer *lx) {
 	ast_n *node = NULL;
 
-	switch (lex_peek(lx).type) {
+	token t = lex_peek(lx);
+	switch (t.type) {
 		case TOK_IDENT:
 			node = astn_new(STMT, STMT_LABEL);
-			node->dat.stmt.expr = parse_expr_primary(lx); //TODO: replace with a plain identifier (expr_primary can pull parentheses chain)
+			node->dat.expr.sym = symtable_def_label(&lx->stb, t.str);
+			lex_adv(lx);
 			break;
 		case TOK_KW_CASE:
 			lex_adv(lx);
@@ -1171,7 +1187,6 @@ ast_n *parse_stmt_label(lexer *lx) {
 		//missing ':'
 	}
 	lex_adv(lx);
-	node->dat.stmt.body = parse_stmt(lx);
 
 	return node;
 }
@@ -1202,7 +1217,7 @@ ast_n *parse_stmt_jump(lexer *lx) {
 			break;
 		case TOK_KW_RETURN:
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_BREAK);
+			node = astn_new(STMT, STMT_RETURN);
 			
 			if (lex_peek(lx).type != TOK_SEM)
 				node->dat.stmt.expr = parse_expr(lx);

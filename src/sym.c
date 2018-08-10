@@ -3,6 +3,9 @@
 #include <string.h>
 #include "sym.h"
 #include "util/map.h"
+#include "util/vector.h"
+
+//remember to change lvars and labels from map to vector
 
 void symtable_init(symtable *stb) {
 	stb->s_global = malloc(sizeof(struct SCOPE));
@@ -61,7 +64,8 @@ symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 	s->type = type;
 	if (type->kind == TYPE_FUNC) {
 		s->fbody = NULL;
-		map_init(&s->lvars, 16);
+		vector_init(&s->lvars, 16);
+		map_init(&s->labels, 16);
 	}
 
 	//Get base type from chain
@@ -71,12 +75,38 @@ symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 	s->btype = bt_ptr;
 
 	//Add symbol to table
-	map_insert(&stb->s_cur->table, name, s);
+	//Macros always go in global scope
+	if (type->kind == TYPE_MACRO) {
+		map_insert(&stb->s_global->table, name, s);
+	} else {
+		map_insert(&stb->s_cur->table, name, s);
+	}
 	if (stb->func != NULL)
-		map_insert(&stb->func->lvars, name, s);
+		vector_add(&stb->func->lvars, s);
 
 	return s;
 }
+
+symbol *symtable_def_label(symtable *stb, char *name) {
+	if (stb->func == NULL) {
+		printf("ERROR: Label '%s' declared outside of function\n", name);
+		return NULL;
+	}
+	
+	//Check for duplicates
+	symbol *dup = map_get(&stb->func->labels, name);
+	if (dup != NULL) {
+		printf("ERROR: Label '%s' is already declared\n", name);
+		return NULL;
+	}
+
+	symbol *s = malloc(sizeof(struct SYMBOL));
+	s->name = name;
+	map_insert(&stb->func->labels, name, s);
+
+	return s;
+}
+
 
 void symtable_undef(symtable *stb, char *name) {
 	

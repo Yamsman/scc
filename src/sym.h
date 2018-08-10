@@ -2,8 +2,8 @@
 #define SYM_TABLE_H
 
 #include "util/map.h"
+#include "util/vector.h"
 
-//TODO: store string hashes alongside symbols for faster comparison
 enum TYPE_KIND {
 	TYPE_UNDEF,
 	TYPE_MACRO,
@@ -66,7 +66,7 @@ typedef struct SYMBOL {
 
 	//Data
 	struct AST_N *fbody;	//Function body
-	struct MAP lvars;	//Function variables
+	struct VECTOR lvars;	//Function variables
 	struct MAP labels;	//Function labels
 
 	char *mac_exp;		//Macro expansion
@@ -88,6 +88,7 @@ void symtable_close(struct SYMTABLE *stb);
 void symtable_scope_enter(struct SYMTABLE *stb);
 void symtable_scope_leave(struct SYMTABLE *stb);
 struct SYMBOL *symtable_def(struct SYMTABLE *stb, char *name, struct TYPE *type);
+struct SYMBOL *symtable_def_label(symtable *stb, char *name);
 void symtable_undef(symtable *stb, char *name);
 struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 

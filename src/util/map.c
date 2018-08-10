@@ -105,8 +105,8 @@ void map_insert(map *m, const char *key, void *val) {
 void map_remove(map *m, const char *key) {
 	int index = str_hash(key) % m->max;
 	while (m->keys[index] != NULL) {
-		/* The data pointer is set to null, but the key isn't.
-		 * As a result, get operations will return null, and insertion
+		/* The data pointer is set to NULL, but the key isn't.
+		 * As a result, get operations will return NULL, and insertion
 		 * does an additional check to see if the space has been
 		 * previously removed. If not reused, these spaces disappear
 		 * upon resizing.

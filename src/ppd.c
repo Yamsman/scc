@@ -7,16 +7,51 @@
 #include "ppd.h"
 #include "util/map.h"
 
+void ppd_defparams(lexer *lx) {
+	lx->tgt->pos++;
+	token *t = &lx->ahead;
+	lex_next(lx, 0);
+	if (t->nline) {
+		printf("ERROR: Expected ')' before newline\n");
+		return;
+	}
+
+	//Read parameters
+	//TODO: Proper error handling
+	while (t->type != TOK_RPR) {
+		if (t->nline) {
+			printf("ERROR: Unexpected end of line in macro parameter list\n");
+			return;
+		}
+
+		//Read identifier
+		lex_next(lx, 0);
+		if (t->type == TOK_IDENT) {
+		} else {
+			printf("ERROR: Expected identifier before ...\n");
+			break;
+		}
+	}
+}
+
 void ppd_define(lexer *lx) {
 	//Read macro name
+	lex_next(lx, 0);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
-		puts("invalid macro name");
+		printf("ERROR: Invalid macro name\n");
+
+	//Check for and read macro parameter list
+	if (*lx->tgt->pos == '(')
+		ppd_defparams(lx);
 
 	//Get bounds of macro body
 	char *cur = lx->tgt->pos;
 	char *start, *end;
-	while (isspace(*cur)) cur++;
+	while (isspace(*cur) && *cur != '\n') cur++;
+	if (cur == lx->tgt->pos && *cur != '\n')
+		printf("ERROR: No whitespace after macro name\n");
+
 	start = cur;
 	while (*cur != '\n') {
 		if (*cur == '\\' && *(cur+1) == '\n')
@@ -28,13 +63,16 @@ void ppd_define(lexer *lx) {
 
 	//Copy body to buffer
 	int len = cur - start;
-	char *buf = malloc(len+1);
-	memcpy(buf, start, len);
-	buf[len] = '\0';
-	for (int i=0; i<len; i++) {
-		if (buf[0] == '#' && buf[1] == '#' ||
-				buf[len-2] == '#' && buf[len-1] == '#')
-			puts("'##' at beginning or end of macro");
+	char *buf = NULL;
+	if (len > 0) {
+		buf = malloc(len+1);
+		memcpy(buf, start, len);
+		buf[len] = '\0';
+		for (int i=0; i<len; i++) {
+			if (buf[0] == '#' && buf[1] == '#' ||
+			    buf[len-2] == '#' && buf[len-1] == '#')
+				puts("'##' at beginning or end of macro");
+		}
 	}
 
 	//Add to symtable
@@ -44,11 +82,11 @@ void ppd_define(lexer *lx) {
 	return;
 }
 
-void ppd_if(lexer *lx) {
-
+void ppd_error(lexer *lx) {
+	
 }
 
-void ppd_error(lexer *lx) {
+void ppd_if(lexer *lx) {
 
 }
 
@@ -100,33 +138,35 @@ void ppd_include(lexer *lx) {
 			fdir[slash-fname] = '\0';
 			strcat(fdir, slash);
 		}
-		printf("%s\n", fdir);
-		if (lex_open_file(lx, fdir)) return;
+		if (lex_open_file(lx, fdir)) goto done;
 	}
 	fdir[0] = '\0';
 
 	//Attempt system include directory
 	strcpy(fdir, "/usr/include/");
 	strcat(fdir, fname);
-	printf("%s\n", fdir);
 	if (!lex_open_file(lx, fdir)) {
 		printf("ERROR: Unable to open file '%s': ", fname);
 		fflush(stdout);
 		perror(NULL);
+		free(fdir);
 	}
+done:	free(fname);
 	return;
 }
 
 void ppd_undef(lexer *lx) {
 	//Read macro name
+	lex_next(lx, 0);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
 		printf("ERROR: Invalid macro name '%s'\n", mname.str);
 
-	symbol *s = symtable_search(&lx->stb, mname.str);
-	if (s == NULL) {
-		printf("ERROR: Macro '%s' is not defined\n", mname.str);
+	//Check the global scope
+	symbol *s = map_get(&lx->stb.s_global->table, mname.str);
+	if (s == NULL || s->type->kind != TYPE_MACRO)
 		return;
-	}
+	map_remove(&lx->stb.s_global->table, mname.str);
 
+	return;
 }

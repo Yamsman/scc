@@ -7,58 +7,21 @@
 #include "ppd.h"
 #include "util/map.h"
 
-//TODO: struct for holding source file
+map kw_table;
+void init_kwtable() {
+	map_init(&kw_table, 40);
+	#define kw(id, str) map_insert(&kw_table, str, (void*)id);
+	#include "kw.inc"
+	#undef kw
+	return;
+}
 
-//keywords
-#define KW_NUM 38
-char *kw[KW_NUM] = {
-	"if",
-	"else",
-	"switch",
-	"while",
-	"for",
-	"do",
-	"case",
-	"default",
-	"goto",
-	"continue",
-	"break",
-	"return",
-
-	"void",
-	"char",
-	"short",
-	"int",
-	"long",
-	"float",
-	"double",
-
-	"struct",
-	"union",
-	
-	"typedef",
-	"extern",
-	"static",
-	"auto",
-	"register",
-	
-	"const",
-	"volatile",
-
-	"define",
-	"elif",
-	"endif",
-	"error",
-	"ifdef",
-	"ifndef",
-	"include",
-	"line",
-	"pragma",
-	"undef"
-};
+void close_kwtable() {
+	map_close(&kw_table);
+	return;
+}
 
 token BLANK_TOKEN = {-1, -1, NULL};
-
 lexer *lexer_init(char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
 	lx->tgt = NULL;
@@ -132,7 +95,7 @@ int lex_ident(lexer *lx, token *t) {
 	return len;
 }
 
-void lex_next(lexer *lx) {
+void lex_next(lexer *lx, int m_exp) {
 	token t = {-1, -1, NULL};
 	lex_target *tgt = lx->tgt;
 
@@ -152,6 +115,7 @@ reset:	while (isspace(*tgt->pos)) {
 		if (*tgt->pos == '\n') nline = 1;
 		tgt->pos++;
 	}
+	t.nline = nline;
 
 	//Get next char
 	int len;
@@ -169,6 +133,7 @@ reset:	while (isspace(*tgt->pos)) {
 			tgt = lx->tgt;
 			goto reset;
 		case ';': 	t.type = TOK_SEM; 	break;
+		case ':':	t.type = TOK_COL;	break;
 		case ',':	t.type = TOK_CMM; 	break;
 		case '.':	t.type = TOK_PRD; 	break;
 		case '{':	t.type = TOK_LBR; 	break;
@@ -343,18 +308,14 @@ reset:	while (isspace(*tgt->pos)) {
 			cur += len;
 
 			//Check if matches keyword
-			//TODO: put identifiers inside map
-			for (int i=0; i<KW_NUM; i++) {
-				if (!strcmp(t.str, kw[i])) {
-					t.type = TOK_KW_IF+i;
-					break;
-				}
-			}
+			int kw_id = (long long)map_get(&kw_table, t.str); 
+			if (kw_id > 0)
+				t.type = kw_id;
 
 			//Check for macro expansion
 			symbol *s = symtable_search(&lx->stb, t.str);
-			if (s != NULL && s->type->kind == TYPE_MACRO) {
-				//Prevent double expansion
+			if (m_exp && s != NULL && s->mac_exp != NULL) {
+				//Check target stack to prevent reexpansion
 				int expanded = 0;
 				for (lex_target *i = tgt; i != NULL; i = i->prev) {
 					if (i->type == TGT_MACRO && !strcmp(i->name, t.str)) {
@@ -422,21 +383,20 @@ end:	tgt->pos = cur;
 //Perform preprocessing
 void lex_ppd(lexer *lx) {
 	//Read directive
-	lex_next(lx);
-	token direc = lex_peek(lx);
-	switch (direc.type) {
-		case TOK_PP_DEFINE:  lex_next(lx); ppd_define(lx);	break;
-		case TOK_PP_ELIF:    puts("ERROR: #elif before #if");	break;
+	lex_next(lx, 0);
+	switch (lex_peek(lx).type) {
+		case TOK_KW_DEFINE:  ppd_define(lx);			break;
+		case TOK_KW_ELIF:    puts("ERROR: #elif before #if");	break;
 		case TOK_KW_ELSE:    puts("ERROR: #else before #if");	break;
-		case TOK_PP_ENDIF:   puts("ERROR: #endif before #if");	break;
-		case TOK_PP_ERROR:   //ppd_error(lx);			break;
+		case TOK_KW_ENDIF:   puts("ERROR: #endif before #if");	break;
+		case TOK_KW_ERROR:   //ppd_error(lx);			break;
 		case TOK_KW_IF:      //ppd_if(lx);			break;
-		case TOK_PP_IFDEF:   //ppd_ifdef(lx);			break;
-		case TOK_PP_IFNDEF:  /*ppd_ifndef(lx);*/		break;
-		case TOK_PP_INCLUDE: ppd_include(lx);			break;
-		case TOK_PP_LINE:    break;
-		case TOK_PP_PRAGMA:  break;
-		case TOK_PP_UNDEF:   ppd_undef(lx);			break;
+		case TOK_KW_IFDEF:   //ppd_ifdef(lx);			break;
+		case TOK_KW_IFNDEF:  /*ppd_ifndef(lx);*/		break;
+		case TOK_KW_INCLUDE: ppd_include(lx);			break;
+		case TOK_KW_LINE:    break;
+		case TOK_KW_PRAGMA:  break;
+		case TOK_KW_UNDEF:   ppd_undef(lx);			break;
 		default:
 			puts("ERROR: Invalid preprocessor directive");
 			break;
@@ -452,7 +412,7 @@ token lex_peek(lexer *lx) {
 }
 
 void lex_adv(lexer *lx) {
-reset:	lex_next(lx);
+reset:	lex_next(lx, 1);
 	if (lx->ahead.type == TOK_SNS) {
 		lex_ppd(lx);
 		goto reset;
