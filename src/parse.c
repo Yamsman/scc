@@ -153,6 +153,7 @@ ast_n *parse_decl(lexer *lx) {
 		case TOK_LBR:
 			break;
 	}
+	type_del(type);
 
 	return node;
 }
@@ -333,7 +334,7 @@ s_param *parse_fparam(lexer *lx) {
 	s_type *base_type = parse_decl_spec(lx);
 
 	//Parse declarator
-	s_type *type = parse_decltr(lx, type_clone(base_type), &vname);
+	s_type *type = parse_decltr(lx, base_type, &vname);
 
 	//Create parameter and return
 	return param_new(type, vname);
@@ -376,9 +377,9 @@ ast_n *parse_fdef(lexer *lx) {
 
 	//Enter function scope
 	symtable_scope_enter(&lx->stb);
+	lx->stb.func = s;
 	for (s_param *p = f_type->param; p != NULL; p = p->next)
 		symtable_def(&lx->stb, p->name, p->type);
-	lx->stb.func = s;
 
 	//Create node and parse body
 	ast_n *node = astn_new(DECL, DECL_FUNC);
@@ -559,7 +560,7 @@ base:			lex_adv(lx);
 ast_n *parse_expr_cond(lexer *lx) {
 	ast_n *node = parse_expr_logic_or(lx);
 
-	//ternary
+	//TODO: ternary
 
 	return node;
 }
@@ -895,6 +896,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			} else {
 				printf("ERROR: Undeclared variable \"%s\"\n", t.str);
 			}
+			free(t.str);
 
 			return node;
 		case TOK_CONST:

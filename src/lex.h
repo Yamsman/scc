@@ -76,6 +76,13 @@ enum TGT_TYPE {
 	TGT_MACRO
 };
 
+typedef struct SRC_POS {
+	int lnum;	//Line number
+	int cnum;	//Column number
+	char *lbegin;	//Pointer to beginning of line
+	char *fname;	//Filename
+} src_pos;
+
 typedef struct TOKEN {
 	int type;
 	int nline;	//Preceeded by newline
@@ -101,8 +108,6 @@ typedef struct LEXER {
 	struct TOKEN_NODE *pre;		//Pre-lexed tokens
 	struct TOKEN ahead;		//Current token
 	struct SYMTABLE stb;		//Symbol table
-	int lnum;
-	int cnum;
 } lexer;
 
 struct LEXER *lexer_init(char *fname);

@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-g -std=c99 -pedantic-errors
+CFLAGS=-g -std=c99 -pedantic-errors -O0
 SRC=$(wildcard src/*.c) src/util/map.c src/util/vector.c
 EXEC=scc
 

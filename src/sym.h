@@ -16,8 +16,10 @@ enum TYPE_KIND {
 	TYPE_SHORT,
 	TYPE_INT,
 	TYPE_LONG,
+	TYPE_LONG_LONG,
 	TYPE_FLOAT,
 	TYPE_DOUBLE,
+	TYPE_LDOUBLE,
 
 	TYPE_STRUCT,
 	TYPE_UNION
@@ -34,8 +36,9 @@ enum TYPE_CLASS {
 
 typedef struct TYPE {
 	int kind;		//Variable kind
-	int s_class;		//Variable class
+	int size;		//Variable size
 	
+	int s_class;		//Variable class
 	int is_signed;		//Variable qualifiers
 	int is_const;
 	int is_volatile;
@@ -45,14 +48,14 @@ typedef struct TYPE {
 	int ref_len;		//Length if array
 
 	//Function data
-	struct PARAM *param;	//Beginning of parameter list
+	struct PARAM *param;	//List of function parameters
 	struct TYPE *ret;	//Return type
 
 	//Struct/union data
 	struct PARAM *memb;	//List of struct members
 } s_type;
 
-//Layout is identical for both function parameters & struct members
+//Used for both function parameters & struct members
 typedef struct PARAM {
 	char *name;		//Parameter name
 	struct TYPE *type;	//Parameter type
@@ -62,13 +65,11 @@ typedef struct PARAM {
 typedef struct SYMBOL {
 	char *name;		//Symbol name
 	struct TYPE *type;	//Type (with reference chain)
-	struct TYPE *btype;	//Base type
+	struct TYPE *btype;	//Base type (last node in reference chain)
 
-	//Data
 	struct AST_N *fbody;	//Function body
 	struct VECTOR lvars;	//Function variables
 	struct MAP labels;	//Function labels
-
 	char *mac_exp;		//Macro expansion
 } symbol;
 
@@ -83,6 +84,7 @@ typedef struct SYMTABLE {
 	struct SYMBOL *func;	//Current function
 } symtable;
 
+//Symtable control functions
 void symtable_init(struct SYMTABLE *stb);
 void symtable_close(struct SYMTABLE *stb);
 void symtable_scope_enter(struct SYMTABLE *stb);
@@ -93,12 +95,15 @@ void symtable_undef(symtable *stb, char *name);
 struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 
 //Symbol-type helper functions
+struct SYMBOL *sym_new();
+void sym_del(struct SYMBOL *s);
 struct TYPE *type_new(int kind);
+void type_del(struct TYPE *t);
 struct TYPE *type_clone(struct TYPE *from);
 int type_compare(struct TYPE *a, struct TYPE *b);
-void type_del(struct TYPE *t);
 
 struct PARAM *param_new();
 void param_del(struct PARAM *p);
+void memb_del(struct PARAM *m);
 
 #endif

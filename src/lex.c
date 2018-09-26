@@ -27,7 +27,6 @@ lexer *lexer_init(char *fname) {
 	lx->tgt = NULL;
 	lx->pre = NULL;
 	lx->ahead = BLANK_TOKEN;
-	symtable_init(&lx->stb);
 
 	if (!lex_open_file(lx, fname)) {
 		printf("ERROR: Unable to open file '%s': ", fname);
@@ -36,6 +35,7 @@ lexer *lexer_init(char *fname) {
 		free(lx);
 		return NULL;
 	}
+	symtable_init(&lx->stb);
 
 	return lx;
 }
@@ -51,13 +51,19 @@ int lex_open_file(lexer *lx, char *fname) {
 	char *buf = malloc(len+1);
 	fseek(src_f, 0, SEEK_SET);
 	fread(buf, len, 1, src_f);
+	fclose(src_f);
 
 	lexer_tgt_open(lx, fname, TGT_FILE, buf);
 	return 1;
 }
 
 void lexer_close(lexer *lx) {
+	while (lx->tgt != NULL)
+		lexer_tgt_close(lx);
 
+	symtable_close(&lx->stb);
+	free(lx);
+	return;
 }
 
 void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
@@ -67,16 +73,17 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 	n_tgt->buf = buf;
 	n_tgt->pos = buf;
 
-	if (lx->tgt != NULL)
-		n_tgt->prev = lx->tgt;
+	n_tgt->prev = lx->tgt;
 	lx->tgt = n_tgt;
 	return;
 }
 
 void lexer_tgt_close(lexer *lx) {
 	lex_target *tgt = lx->tgt;
-	if (tgt->type == TGT_FILE)
+	if (tgt->type == TGT_FILE) {
+		free(tgt->name);
 		free(tgt->buf);
+	}
 	lx->tgt = tgt->prev;
 
 	free(tgt);
@@ -92,6 +99,130 @@ int lex_ident(lexer *lx, token *t) {
 	memcpy(t->str, lx->tgt->pos, len);
 	t->str[len] = '\0';
 	t->type = TOK_IDENT;
+	return len;
+}
+
+//Used for holding state of decimal and exponent
+enum NUM_STATUS {
+	S_NONE,	//No decimal/exponent
+	S_INIT,	//Decimal/exponent exists, but has no trailing digits
+	S_DONE	//Decima/exponent exists and has trailing digits
+};
+
+int lex_num(lexer *lx, token *t) {
+	char *cur = lx->tgt->pos;
+
+	//Read prefix
+	int base = 10;
+	if (*cur == '0' && isalnum(*(cur+1))) {
+		base = 8;
+		if (*(cur+1) == 'x') {
+			base = 16;
+			cur++;
+		} if (*(cur+1) == 'b') {
+			base = 2;
+			cur++;
+		}
+		cur++;
+	}
+
+	//Read number
+	int dec_state = S_NONE; 
+	int exp_state = S_NONE;
+	long long int_val = 0;
+	long long frac_val = 0;
+	long long exp_val = 0;
+	long long *tgt_val = &int_val;
+	for (;;cur++) {
+		char digit = tolower(*cur);
+		int dval = digit - '0';
+
+		//Handle floating-point characters
+		if (digit == '.') {
+			if (dec_state != S_NONE) {
+				printf("ERROR: Multiple decimal points in constant\n");
+				goto n_end;
+			}
+			dec_state = S_INIT;
+			tgt_val = &frac_val;
+			continue;
+		} else if (digit == 'e' && base != 16) {
+			if (exp_state != S_NONE) {
+				printf("ERROR: Multiple exponents in constant\n");
+				goto n_end;
+			}
+			exp_state = S_INIT;
+			tgt_val = &exp_val;
+			continue;
+		}
+
+		//Read digits
+		//Cases fall through from top to bottom to verify input
+		switch (digit) {
+		case 'f': case 'e': case 'd':
+		case 'c': case 'b': case 'a':
+			if (base == 10) {
+				goto n_end;
+			}
+			dval = 10 + (digit - 'a');
+		case '9': case '8':
+			if (base == 8) {
+				printf("ERROR: Invalid digit in octal constant\n");
+				goto n_end;
+			}
+		case '7': case '6': case '5':
+		case '4': case '3': case '2':
+			if (base == 2) {
+				printf("ERROR: Invalid digit in binary constant\n");
+				goto n_end;
+			}
+		case '1': case '0':
+			if (dec_state == S_INIT) dec_state = S_DONE;
+			if (exp_state == S_INIT) exp_state = S_DONE;
+			*(tgt_val) *= base;
+			*(tgt_val) += dval;
+			break;
+
+		default: goto n_end;
+		}
+	}
+
+n_end:  if (dec_state != S_NONE && base != 10) {
+		printf("ERROR: Decimal point in non-base 10 constant\n");
+	}
+	if (exp_state == S_INIT) {
+		printf("ERROR: Missing exponent in constant\n");
+	}
+
+	/*
+	//Read suffix
+	s_type *ty;
+	if (dec_state != S_NONE || exp_state == S_DONE) {
+		v_type = TYPE_FLOAT;
+	} else {
+		v_type = TYPE_INT;
+	}
+
+	char *sffx_beg = cur;
+	while (isalpha(*cur)) {
+		switch (tolower(*cur)) {
+			case 'l':
+				if (t->kind == TYPE_INT)
+					t->size = 8; //long
+				else if (v_type == TYPE_LONG)
+					t->size = TYPE_LONG_LONG;
+				break;
+			case 'u':
+				t->is_signed = 0;
+				break;
+		}
+		cur++;
+	}
+	*/
+
+	//TODO: verification
+	int len = cur - lx->tgt->pos;
+
 	return len;
 }
 
@@ -125,12 +256,13 @@ reset:	while (isspace(*tgt->pos)) {
 		case '\0':
 			//End lexing if end has been reached
 			//Otherwise, go to previous target
-			if (tgt->prev == NULL)  {
-				t.type = TOK_END;
-				break;
-			}
 			lexer_tgt_close(lx);
 			tgt = lx->tgt;
+			if (tgt == NULL) {
+				t.type = TOK_END;
+				lx->ahead = t;
+				return;
+			}
 			goto reset;
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ':':	t.type = TOK_COL;	break;
@@ -301,13 +433,14 @@ reset:	while (isspace(*tgt->pos)) {
 		case 'K': case 'L': case 'M': case 'N': case 'O':
 		case 'P': case 'Q': case 'R': case 'S': case 'T':
 		case 'U': case 'V': case 'W': case 'X': case 'Y':
-		case 'Z': case '_':
+		case 'Z': case '_': {
 			//Read identifier
 			cur--;
 			int len = lex_ident(lx, &t);
 			cur += len;
 
 			//Check if matches keyword
+			//String is not freed yet; could be used as macro name
 			int kw_id = (long long)map_get(&kw_table, t.str); 
 			if (kw_id > 0)
 				t.type = kw_id;
@@ -329,42 +462,25 @@ reset:	while (isspace(*tgt->pos)) {
 				tgt->pos = cur;
 				lexer_tgt_open(lx, t.str, TGT_MACRO, s->mac_exp);
 				tgt = lx->tgt;
+
 				free(t.str);
+				t.str = NULL;
 				goto reset;
 			}
-			break;
+
+			//If the token is an identifier, free the string
+			if (kw_id != 0) {
+				free(t.str);
+				t.str = NULL;
+			}
+
+			} break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
 			//Read number
 			cur--;
-			int has_pt = 0, has_ex = 0;
-			for (;;cur++) {
-				if (isdigit(*cur)) {
-					if (has_ex == 1 || has_ex == 2)
-						has_ex = 3;
-				} else if (*cur == '.') {
-					if (has_ex) {
-							
-					}
-					has_pt++;	
-				} else if (*cur == 'e' || *cur == 'E') {
-					if (has_ex != 0)
-						continue;
-					has_ex++;
-				} else if (*cur == '-' || *cur == '+') {
-					if (has_ex != 1)
-						continue;
-					has_ex++;
-				} else {
-					break;
-				}
-			}
-
-			//TODO: verification
-			int llen = cur - begin;
-			t.str = malloc(llen+1);
-			memcpy(t.str, begin, llen);
-			t.str[llen] = '\0';
+			int len = lex_num(lx, &t);
+			cur += len;
 
 			//printf("%s -> %f\n", t.str, atof(t.str));
 			t.type = TOK_CONST;

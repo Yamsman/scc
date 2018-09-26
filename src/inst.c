@@ -20,17 +20,23 @@ const char *x86_64_str[] = {
 oprd mk_oprd(int type, int val) {
 	oprd o;
 	o.type = type;
-	o.val = val;
+	o.val.ival = val;
 	o.deref = NODEREF;
 	return o;
 }
 
-oprd mk_oprd_ex(int type, int val, int deref, int ofs) {
+oprd mk_oprd_drf(int type, int val, int deref, int ofs) {
 	oprd o;
 	o.type = type;
-	o.val = val;
+	o.val.ival = val;
 	o.deref = deref;
-	o.deref_ofs = ofs;
+	o.deref_ofs.ival = ofs;
+	return o;
+}
+
+oprd mk_oprd_label(char *lbl) {
+	oprd o = mk_oprd(OPRD_LBL, 0);
+	o.val.sval = lbl;
 	return o;
 }
 
@@ -42,7 +48,6 @@ oprd mk_oprd_ex(int type, int val, int deref, int ofs) {
 inst_n *mk_inst(int op_id, int argc, ...) {
 	inst_n *in = malloc(sizeof(struct INST));
 	in->op = op_id;
-	in->jmp_to = NULL;
 	in->lbl = NULL;
 	in->next = NULL;
 
@@ -72,6 +77,7 @@ void inst_str(inst_n *in) {
 	//Print label
 	if (in->lbl != NULL) {
 		printf("%s:", in->lbl);
+		if (in->next->lbl != NULL) printf("\n");
 		return;
 	}
 
@@ -89,9 +95,11 @@ void inst_str(inst_n *in) {
 		if (o.deref != NODEREF)
 			printf("[");
 		if (o.type == OPRD_REG)
-			printf("%s", x86_64_str[o.val]);
+			printf("%s", x86_64_str[o.val.ival]);
+		else if (o.type == OPRD_LBL)
+			printf("%s", o.val.sval);
 		else
-			printf("%i", o.val);
+			printf("%i", o.val.ival);
 
 		//Dereferencing
 		//TODO: DWORD PTR ...
@@ -100,10 +108,13 @@ void inst_str(inst_n *in) {
 				printf("]");
 				break;
 			case DEREF_REG:
-				printf("+%s]", x86_64_str[o.deref_ofs]);
+				printf("+%s]", x86_64_str[o.deref_ofs.ival]);
 				break;
-			case DEREF_IMMD: 
-				printf("+%i]", o.deref_ofs);
+			case DEREF_IMM: 
+				printf("+%i]", o.deref_ofs.ival);
+				break;
+			case DEREF_LBL: 
+				printf("+%s]", o.deref_ofs.sval);
 				break;
 		}
 	}
@@ -121,6 +132,9 @@ void asmf_init(asm_f *f) {
 	//f->data_cur = NULL;
 	f->text = NULL;
 	f->text_cur = NULL;
+	f->lnum = 0;
+	f->cont_tgt = NULL;
+	f->break_tgt = NULL;
 	return;
 }
 
@@ -136,5 +150,6 @@ void asmf_add_inst(asm_f *f, inst_n *in) {
 		f->text_cur->next = in;
 		f->text_cur = in;
 	}
+
 	return;
 }

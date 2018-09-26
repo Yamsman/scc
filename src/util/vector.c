@@ -44,11 +44,11 @@ void *vector_get(vector *v, int index) {
 
 void vector_add(vector *v, void *val) {
 	//Expand the table if there is no room left
-	if (v->len >= v->max)
+	if (v->len+1 >= v->max)
 		vector_expand(v);
 
 	//Add value to end of table
-	int index = v->len-1;
+	int index = v->len;
 	v->table[index] = val;
 	v->len++;
 

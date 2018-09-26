@@ -42,8 +42,8 @@ void ppd_define(lexer *lx) {
 		printf("ERROR: Invalid macro name\n");
 
 	//Check for and read macro parameter list
-	if (*lx->tgt->pos == '(')
-		ppd_defparams(lx);
+	//if (*lx->tgt->pos == '(')
+	//	ppd_defparams(lx);
 
 	//Get bounds of macro body
 	char *cur = lx->tgt->pos;
@@ -151,8 +151,7 @@ void ppd_include(lexer *lx) {
 		perror(NULL);
 		free(fdir);
 	}
-done:	free(fname);
-	return;
+done:	return;
 }
 
 void ppd_undef(lexer *lx) {

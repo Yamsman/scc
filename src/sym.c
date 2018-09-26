@@ -5,8 +5,9 @@
 #include "util/map.h"
 #include "util/vector.h"
 
-//remember to change lvars and labels from map to vector
-
+/*
+ * Symtable functions
+ */
 void symtable_init(symtable *stb) {
 	stb->s_global = malloc(sizeof(struct SCOPE));
 	stb->s_cur = stb->s_global;
@@ -14,10 +15,15 @@ void symtable_init(symtable *stb) {
 	return;
 }
 
-//TODO: CLEAN UP PROPERLY
 void symtable_close(symtable *stb) {
 	scope *sc = stb->s_cur;
 	while (sc != NULL) {
+		for (int i=0; i<sc->table.max; i++) {
+			if (sc->table.table[i] != NULL)
+				sym_del(sc->table.table[i]);
+		}
+		map_close(&sc->table);
+
 		scope *prev = sc->prev;
 		free(sc);
 		sc = prev;
@@ -127,6 +133,35 @@ void symtable_print() {
 	return;
 }
 
+symbol *sym_new() {
+
+	return NULL;
+}
+
+void sym_del(symbol *s) {
+	if (s->name != NULL)
+		free(s->name);
+	if (s->type != NULL)
+		type_del(s->type);
+
+	/*
+	 * s->fbody is part of the AST, so it will be freed elsewhere.
+	 * s->labels only contains dummy values, so closing the map is enough.
+	 */
+	for (int i=0; i<s->lvars.len; i++) {
+		if (s->lvars.table[i] != NULL)
+			sym_del(s->lvars.table[i]);
+	}
+	vector_close(&s->lvars);
+	map_close(&s->labels);
+
+	if (s->mac_exp != NULL)
+		free(s->mac_exp);
+
+	free(s);
+	return;
+}
+
 s_type *type_new(int kind) {
 	s_type *type = malloc(sizeof(struct TYPE));
 	type->kind = kind;
@@ -204,10 +239,20 @@ int type_compare(s_type *a, s_type *b) {
 }
 
 void type_del(s_type *t) {
-	if (t->param != NULL)
-		param_del(t->param);
+	//Reference data
 	if (t->ref != NULL)
 		type_del(t->ref);
+
+	//Function data
+	if (t->ret != NULL)
+		type_del(t->ret);
+	if (t->param != NULL)
+		param_del(t->param);
+
+	//Struct/union data
+	if (t->memb != NULL)
+		memb_del(t->memb);
+
 	free(t);
 	return;
 }
@@ -222,11 +267,19 @@ s_param *param_new(s_type *type, char *name) {
 }
 
 void param_del(s_param *p) {
-	if (p->type != NULL)
-		type_del(p->type);
-	if (p->name != NULL)
-		free(p->name);
+	//Symbols created when parsing a function definition take "ownership"
+	//of the name and type pointers; hence, they are not freed here
 	if (p->next != NULL)
 		param_del(p->next);
 	free(p);
+}
+
+void memb_del(s_param *m) {
+	if (m->type != NULL)
+		type_del(m->type);
+	if (m->name != NULL)
+		free(m->name);
+	if (m->next != NULL)
+		param_del(m->next);
+	free(m);
 }
