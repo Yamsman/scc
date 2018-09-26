@@ -65,6 +65,7 @@ typedef struct ASM {
 	int lnum;
 	char *cont_tgt;
 	char *break_tgt;
+	struct SYMBOL *fsym;
 } asm_f;
 
 struct OPRD mk_oprd(int type, int val);
@@ -72,6 +73,7 @@ struct OPRD mk_oprd_ex(int type, int val, int deref, int ofs);
 struct OPRD mk_oprd_label(char *lbl);
 struct INST *mk_inst(int op_id, int argc, ...);
 struct INST *mk_label(char *str);
+void inst_del(struct INST *in);
 void inst_str(struct INST *in);
 
 void asmf_init(struct ASM *f);

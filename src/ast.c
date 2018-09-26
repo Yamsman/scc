@@ -13,6 +13,7 @@ ast_n *astn_new(int kind, int s_kind) {
 			node->dat.decl.sym = NULL;
 			node->dat.decl.init = NULL;
 			node->dat.decl.block = NULL;
+			node->dat.decl.next = NULL;
 			break;
 		case EXPR:
 			node->dat.expr.kind = s_kind;
@@ -47,6 +48,8 @@ void astn_del(ast_n *node) {
 			astn_del(node->dat.expr.right);
 			break;
 		case STMT:
+			if (node->dat.stmt.lbl != NULL)
+				free(node->dat.stmt.lbl);
 			astn_del(node->dat.stmt.expr);
 			astn_del(node->dat.stmt.body);
 			astn_del(node->dat.stmt.else_body);

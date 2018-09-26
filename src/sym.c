@@ -12,6 +12,7 @@ void symtable_init(symtable *stb) {
 	stb->s_global = malloc(sizeof(struct SCOPE));
 	stb->s_cur = stb->s_global;
 	map_init(&stb->s_global->table, 16);
+	stb->s_global->prev = NULL;
 	return;
 }
 

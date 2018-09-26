@@ -1201,13 +1201,12 @@ ast_n *parse_stmt_jump(lexer *lx) {
 			lex_adv(lx);
 			node = astn_new(STMT, STMT_GOTO);
 
-			//Get an identifier
-			ast_n *label = parse_expr_primary(lx);
-			if (label->dat.expr.kind != EXPR_IDENT) {
+			token t = lex_peek(lx);
+			if (t.type != TOK_IDENT) {
 				//Expected identifier before...
-				astn_del(label);
 			}
-			node->dat.stmt.expr = label;
+			lex_adv(lx);
+			node->dat.stmt.lbl = t.str;
 			break;
 		case TOK_KW_CONTINUE:
 			lex_adv(lx);

@@ -4,6 +4,7 @@
 #include "ast.h"
 #include "inst.h"
 #include "gen.h"
+#include "util/map.h"
 
 void gen_stmt(asm_f *f, ast_n *n);
 void gen_expr(asm_f *f, ast_n *n);
@@ -300,7 +301,20 @@ void gen_stmt_label(asm_f *f, ast_n *n) {
 }
 
 void gen_stmt_goto(asm_f *f, ast_n *n) {
+	//Verify label exists in function scope
+	n->dat.stmt.lbl;
+	symbol *fsym = f->fsym;
+	symbol *lbl = NULL;
+	if ((lbl = map_get(&fsym->labels, n->dat.stmt.lbl)) == NULL) {
+		printf("ERROR: Label '%s' used but not defined\n",
+			n->dat.stmt.lbl);
+		return;
+	}
 
+	asmf_add_inst(f, mk_inst(INST_JMP, 1,
+		mk_oprd_label(lbl->name)
+	));
+	return;
 }
 
 void gen_stmt_return(asm_f *f, ast_n *n) {
@@ -309,9 +323,9 @@ void gen_stmt_return(asm_f *f, ast_n *n) {
 
 void gen_stmt(asm_f *f, ast_n *n) {
 	switch (n->dat.stmt.kind) {
-		case STMT_EXPR: gen_expr(f, n);			break;
-		case STMT_CMPD: gen_stmt_cmpd(f, n); 		break;
-		case STMT_IF: 	gen_stmt_if(f, n);		break;
+		case STMT_EXPR:   gen_expr(f, n);		break;
+		case STMT_CMPD:   gen_stmt_cmpd(f, n); 		break;
+		case STMT_IF: 	  gen_stmt_if(f, n);		break;
 		case STMT_SWITCH: gen_stmt_switch(f, n);	break;
 		case STMT_WHILE:
 		case STMT_FOR:
@@ -358,6 +372,7 @@ void gen_fdef(asm_f *f, ast_n *n) {
 	symbol *fsym = n->dat.decl.sym;
 	char *fnc_name = fsym->name;
 	asmf_add_inst(f, mk_label(fnc_name));
+	f->fsym = fsym;
 
 	//Function preamble
 	asmf_add_inst(f, mk_inst(INST_PUSH, 1,
@@ -385,6 +400,7 @@ void gen_fdef(asm_f *f, ast_n *n) {
 	//Function end
 	asmf_add_inst(f, mk_inst(INST_LEAVE, 0));
 	asmf_add_inst(f, mk_inst(INST_RET, 0));
+	f->fsym = NULL;
 	return;
 }
 

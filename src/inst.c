@@ -73,6 +73,13 @@ inst_n *mk_label(char *str) {
 	return in;
 }
 
+void inst_del(inst_n *in) {
+	if (in->lbl != NULL)
+		free(in->lbl);
+	free(in);
+	return;
+}
+
 void inst_str(inst_n *in) {
 	//Print label
 	if (in->lbl != NULL) {
@@ -139,7 +146,13 @@ void asmf_init(asm_f *f) {
 }
 
 void asmf_close(asm_f *f) {
-	//TODO: free all instructions
+	struct INST *cur = f->text;
+	while (cur != NULL) {
+		struct INST *next = cur->next;
+		inst_del(cur);
+		cur = next;
+	}
+	return;
 }
 
 void asmf_add_inst(asm_f *f, inst_n *in) {

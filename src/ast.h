@@ -95,6 +95,7 @@ typedef struct AST_NODE {
 
 		struct AST_STMT {
 			int kind;
+			char *lbl;
 			struct AST_NODE *expr; //expr
 			struct AST_NODE *body; //stmt
 			struct AST_NODE *else_body; //stmt
