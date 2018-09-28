@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "sym.h"
 #include "ast.h"
 #include "inst.h"
@@ -17,7 +18,7 @@ char *gen_numlabel(asm_f *f) {
 }
 
 void gen_decl_init(asm_f *f, ast_n *n) {
-
+	
 }
 
 void gen_decl(asm_f *f, ast_n *n) {
@@ -318,7 +319,11 @@ void gen_stmt_goto(asm_f *f, ast_n *n) {
 }
 
 void gen_stmt_return(asm_f *f, ast_n *n) {
-
+	//TODO: check for matching return type
+	if (n->dat.stmt.expr != NULL) 
+		gen_expr(f, n->dat.stmt.expr);
+	asmf_add_inst(f, mk_inst(INST_LEAVE, 0));
+	asmf_add_inst(f, mk_inst(INST_RET, 0));
 }
 
 void gen_stmt(asm_f *f, ast_n *n) {
@@ -384,8 +389,10 @@ void gen_fdef(asm_f *f, ast_n *n) {
 	));
 
 	//Calculate local variable area size
-	int vsize = 8;
-	//...
+	int vsize = 0;
+	for (int i=0; i<fsym->lvars.len; i++) {
+		vsize += 8; //temporary
+	}
 
 	if (vsize > 0) {
 		asmf_add_inst(f, mk_inst(INST_SUB, 2,
@@ -398,8 +405,20 @@ void gen_fdef(asm_f *f, ast_n *n) {
 	gen_stmt_cmpd(f, n->dat.decl.block);
 
 	//Function end
-	asmf_add_inst(f, mk_inst(INST_LEAVE, 0));
-	asmf_add_inst(f, mk_inst(INST_RET, 0));
+	//Only generate a return statemnt if one isn't present
+	if (f->text_cur->op != INST_RET) {
+		//Only 'main' has a defined return value of zero
+		//if no return statement is present
+		if (!strcmp(fsym->name, "main")) {
+			asmf_add_inst(f, mk_inst(INST_MOV, 2,
+				mk_oprd(OPRD_REG, RAX),
+				mk_oprd(OPRD_IMM, 0)
+			));
+		}
+
+		asmf_add_inst(f, mk_inst(INST_LEAVE, 0));
+		asmf_add_inst(f, mk_inst(INST_RET, 0));
+	}
 	f->fsym = NULL;
 	return;
 }
