@@ -76,13 +76,6 @@ enum TGT_TYPE {
 	TGT_MACRO
 };
 
-typedef struct SRC_POS {
-	int lnum;	//Line number
-	int cnum;	//Column number
-	char *lbegin;	//Pointer to beginning of line
-	char *fname;	//Filename
-} src_pos;
-
 typedef struct TOKEN {
 	int type;
 	int nline;	//Preceeded by newline

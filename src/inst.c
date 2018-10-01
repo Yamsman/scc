@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include "sym.h"
-#include "ast.h"
+#include <string.h>
 #include "inst.h"
+#include "util/map.h"
 
 const char *x86_64_str[] = {
 	#define reg(id, str) str,
@@ -25,7 +25,7 @@ oprd mk_oprd(int type, int val) {
 	return o;
 }
 
-oprd mk_oprd_drf(int type, int val, int deref, int ofs) {
+oprd mk_oprd_ex(int type, int val, int deref, int ofs) {
 	oprd o;
 	o.type = type;
 	o.val.ival = val;
@@ -34,9 +34,9 @@ oprd mk_oprd_drf(int type, int val, int deref, int ofs) {
 	return o;
 }
 
-oprd mk_oprd_label(char *lbl) {
+oprd mk_oprd_label(char *str) {
 	oprd o = mk_oprd(OPRD_LBL, 0);
-	o.val.sval = lbl;
+	o.val.sval = str;
 	return o;
 }
 
@@ -74,8 +74,7 @@ inst_n *mk_label(char *str) {
 }
 
 void inst_del(inst_n *in) {
-	if (in->lbl != NULL)
-		free(in->lbl);
+	//Labels are freed alongside the asm struct
 	free(in);
 	return;
 }
@@ -139,9 +138,10 @@ void asmf_init(asm_f *f) {
 	//f->data_cur = NULL;
 	f->text = NULL;
 	f->text_cur = NULL;
-	f->lnum = 0;
 	f->cont_tgt = NULL;
 	f->break_tgt = NULL;
+	f->lnum = 0;
+	map_init(&f->labels, 10);
 	return;
 }
 
@@ -152,6 +152,13 @@ void asmf_close(asm_f *f) {
 		inst_del(cur);
 		cur = next;
 	}
+
+	//Free labels
+	for (int i=0; i<f->labels.max; i++) {
+		if (f->labels.table[i] != NULL)
+			free(f->labels.table[i]);
+	}
+	map_close(&f->labels);
 	return;
 }
 

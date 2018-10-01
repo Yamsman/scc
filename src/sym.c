@@ -13,6 +13,7 @@ void symtable_init(symtable *stb) {
 	stb->s_cur = stb->s_global;
 	map_init(&stb->s_global->table, 16);
 	stb->s_global->prev = NULL;
+	stb->func = NULL;
 	return;
 }
 
@@ -65,24 +66,9 @@ symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 		}
 	}
 
-	//Create a new symbol
-	symbol *s = malloc(sizeof(struct SYMBOL));
-	s->name = name;
-	s->type = type;
-	if (type->kind == TYPE_FUNC) {
-		s->fbody = NULL;
-		vector_init(&s->lvars, 16);
-		map_init(&s->labels, 16);
-	}
-
-	//Get base type from chain
-	s_type *bt_ptr = type;
-	while (bt_ptr->ref != NULL) 
-		bt_ptr = bt_ptr->ref;
-	s->btype = bt_ptr;
-
-	//Add symbol to table
+	//Create a new symbol and add it to the table
 	//Macros always go in global scope
+	symbol *s = sym_new(name, type);
 	if (type->kind == TYPE_MACRO) {
 		map_insert(&stb->s_global->table, name, s);
 	} else {
@@ -134,9 +120,22 @@ void symtable_print() {
 	return;
 }
 
-symbol *sym_new() {
+symbol *sym_new(char *name, s_type *type) {
+	symbol *s = calloc(1, sizeof(struct SYMBOL));
+	s->name = name;
+	s->type = type;
+	if (type->kind == TYPE_FUNC) {
+		vector_init(&s->lvars, 16);
+		map_init(&s->labels, 16);
+	}
 
-	return NULL;
+	//Get base type from chain
+	s_type *bt_ptr = type;
+	while (bt_ptr->ref != NULL) 
+		bt_ptr = bt_ptr->ref;
+	s->btype = bt_ptr;
+
+	return s;
 }
 
 void sym_del(symbol *s) {

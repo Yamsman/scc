@@ -66,7 +66,7 @@ ast_n *parse(lexer *lx) {
 				case TOK_SEM: fdef = 0;   break; 
 				case TOK_LBR: fdef = par; break;
 				case TOK_END:
-					puts("premature end of input");
+					puts("ERROR: Premature end of input");
 					return NULL;
 			}
 			token_n *tn = make_tok_node(t);

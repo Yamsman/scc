@@ -1,6 +1,8 @@
 #ifndef INST_H
 #define INST_H
 
+#include "util/map.h"
+
 /* 
  * Registers and opcodes
  */
@@ -59,13 +61,15 @@ typedef struct INST {
 
 //TODO: 'text' -> vector
 typedef struct ASM {
-	struct INST *text;
-	struct INST *text_cur;
+	struct INST *text;	//Beginning of instruction list
+	struct INST *text_cur;	//Last instruction in list
 
-	int lnum;
-	char *cont_tgt;
-	char *break_tgt;
-	struct SYMBOL *fsym;
+	char *cont_tgt;		//Target label for 'continue'
+	char *break_tgt;	//Target label for 'break'
+	struct SYMBOL *fsym;	//Symbol of current function, if applicable
+
+	int lnum;		//Number used for next generated label
+	struct MAP labels;	//Map for storing label strings
 } asm_f;
 
 struct OPRD mk_oprd(int type, int val);

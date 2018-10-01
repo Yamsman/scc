@@ -24,8 +24,10 @@ void map_init(map *m, int size) {
 }
 
 void map_close(map *m) {
-	free(m->table);
-	free(m->keys);
+	if (m->table != NULL)
+		free(m->table);
+	if (m->table != NULL)
+		free(m->keys);
 }
 
 unsigned int str_hash(const char *key) {

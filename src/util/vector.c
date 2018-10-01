@@ -23,7 +23,8 @@ void vector_init(vector *v, int size) {
 }
 
 void vector_close(vector *v) {
-	free(v->table);
+	if (v->table != NULL)
+		free(v->table);
 	return;
 }
 

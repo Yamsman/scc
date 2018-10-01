@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "sym.h"
+#include "err.h"
 #include "lex.h"
 #include "ppd.h"
 #include "util/map.h"
@@ -29,8 +30,8 @@ lexer *lexer_init(char *fname) {
 	lx->ahead = BLANK_TOKEN;
 
 	if (!lex_open_file(lx, fname)) {
-		printf("ERROR: Unable to open file '%s': ", fname);
-		fflush(stdout);
+		c_err(NULL, "Unable to open file '%s': ", fname);
+		fflush(stderr);
 		perror(NULL);
 		free(lx);
 		return NULL;
@@ -46,10 +47,11 @@ int lex_open_file(lexer *lx, char *fname) {
 	if (!src_f) return 0;
 
 	//Read data from file
-	fseek(src_f, 0, SEEK_END);
-	int len = ftell(src_f);
+	//fseek(src_f, 0, SEEK_END);
+	//int len = ftell(src_f);
+	int len = 500;
 	char *buf = malloc(len+1);
-	fseek(src_f, 0, SEEK_SET);
+	//fseek(src_f, 0, SEEK_SET);
 	fread(buf, len, 1, src_f);
 	fclose(src_f);
 

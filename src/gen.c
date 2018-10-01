@@ -11,9 +11,11 @@ void gen_stmt(asm_f *f, ast_n *n);
 void gen_expr(asm_f *f, ast_n *n);
 
 char *gen_numlabel(asm_f *f) {
+	//Generate a label and store it in the map
 	int num = f->lnum++;
 	char *buf = malloc(16);
 	snprintf(buf, 16, ".L%i", num);
+	map_insert(&f->labels, buf, buf);
 	return buf;
 }
 
@@ -122,8 +124,46 @@ void gen_expr_bitwise(asm_f *f, ast_n *n) {
 		mk_oprd(OPRD_REG, RBX)
 	));
 
+	return;
+}
+
+void gen_expr_arith(asm_f *f, ast_n *n) {
+	gen_expr(f, n->dat.expr.left);
+
+}
+
+void gen_expr_ref(asm_f *f, ast_n *n) {
+
+}
+
+void gen_expr_deref(asm_f *f, ast_n *n) {
+	gen_expr(f, n->dat.expr.left);
+	asmf_add_inst(f, mk_inst(INST_MOV, 2, 
+		mk_oprd(OPRD_REG, RAX),
+		mk_oprd_ex(OPRD_REG, RAX, DEREF, 0)
+	));
 
 	return;
+}
+
+void gen_expr_array(asm_f *f, ast_n *n) {
+	gen_expr(f, n->dat.expr.left);
+	asmf_add_inst(f, mk_inst(INST_MOV, 2, 
+		mk_oprd(OPRD_REG, RBX),
+		mk_oprd(OPRD_REG, RAX)
+	));
+
+	ast_n *ofs = n->dat.expr.right;
+	if (ofs->dat.expr.kind == EXPR_CONST) {
+		if (ofs->dat.expr.sym->type->kind != TYPE_INT) {
+			printf("ERROR: Array offset must be an integer\n");
+			return;
+		}
+		asmf_add_inst(f, mk_inst(INST_MOV, 2, 
+			mk_oprd(OPRD_REG, RAX),
+			mk_oprd_ex(OPRD_REG, RAX, DEREF_IMM, 0) //placeholder
+		));
+	}
 }
 
 void gen_expr(asm_f *f, ast_n *n) {
@@ -166,12 +206,18 @@ void gen_expr(asm_f *f, ast_n *n) {
 			break;
 		case EXPR_CAST:
 		case EXPR_REF:
+			gen_expr_ref(f, n);
+			break;
 		case EXPR_DEREF:
+			gen_expr_deref(f, n);
+			break;
 		case EXPR_POS:
 		case EXPR_NEG:
 		case EXPR_INC_PRE:
 		case EXPR_DEC_PRE:
 		case EXPR_ARRAY:
+			gen_expr_array(f, n);
+			break;
 		case EXPR_CALL:
 		case EXPR_MEMB:
 		case EXPR_PTR_MEMB:
@@ -296,8 +342,19 @@ void gen_stmt_loop(asm_f *f, ast_n *n) {
 }
 
 void gen_stmt_label(asm_f *f, ast_n *n) {
-	char *lname = n->dat.expr.sym->name;
-	asmf_add_inst(f, mk_label(lname));
+	//Copy the symbol name to a new string
+	char *lsrc = n->dat.expr.sym->name;
+	char *str = malloc(strlen(lsrc)+1);
+	strncpy(str, lsrc, strlen(lsrc));
+
+	//If the label isn't already in the map, store it
+	char *lbl = map_get(&f->labels, str);
+	if (lbl == NULL) {
+		map_insert(&f->labels, str, str);
+		lbl = str;
+	}
+
+	asmf_add_inst(f, mk_label(lbl));
 	return;
 }
 
