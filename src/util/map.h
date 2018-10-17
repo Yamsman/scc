@@ -1,6 +1,10 @@
 #ifndef MAP_H
 #define MAP_H
 
+//Predefined sizes
+#define MAP_DEFAULT 0x11
+#define MAP_EMPTY 0x00
+
 typedef struct MAP {
 	void **table;
 	const char **keys;

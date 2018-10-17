@@ -165,6 +165,20 @@ void gen_expr_array(asm_f *f, ast_n *n) {
 			mk_oprd_ex(OPRD_REG, RAX, DEREF_IMM, 0) //placeholder
 		));
 	}
+
+	return;
+}
+
+void gen_expr_call(asm_f *f, ast_n *n) {
+	//Push args to stack
+	symbol *fsym = n->dat.decl.sym;
+	//vector
+	//for (int i=fsym->params.len-1; i>=0; i++) {
+		
+	//}
+
+	//call function
+	return;
 }
 
 void gen_expr(asm_f *f, ast_n *n) {
@@ -220,6 +234,8 @@ void gen_expr(asm_f *f, ast_n *n) {
 			gen_expr_array(f, n);
 			break;
 		case EXPR_CALL:
+			gen_expr_call(f, n);
+			break;
 		case EXPR_MEMB:
 		case EXPR_PTR_MEMB:
 		case EXPR_INC_POST:

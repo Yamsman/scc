@@ -16,7 +16,11 @@ void vector_del(vector *v) {
 }
 
 void vector_init(vector *v, int size) {
-	v->table = malloc(sizeof(void*)*size);
+	if (size > 0) {
+		v->table = malloc(sizeof(void*)*size);
+	} else {
+		v->table = NULL;
+	}
 	v->len = 0;
 	v->max = size;
 	return;
@@ -44,6 +48,10 @@ void *vector_get(vector *v, int index) {
 }
 
 void vector_add(vector *v, void *val) {
+	//Allocate initial space if vector was initialized as empty
+	if (v->len == VECTOR_EMPTY)
+		vector_init(v, VECTOR_DEFAULT);
+
 	//Expand the table if there is no room left
 	if (v->len+1 >= v->max)
 		vector_expand(v);

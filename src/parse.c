@@ -17,10 +17,10 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname);
 ast_n *parse_decl_body(lexer *lx, s_type *type);
 
 s_param *parse_fparam(lexer *lx);
-s_param *parse_fparam_list(lexer *lx);
+vector parse_fparam_list(lexer *lx);
 ast_n *parse_fdef(lexer *lx);
 
-s_param *parse_smemb(lexer *lx);
+vector parse_smemb(lexer *lx);
 s_type *parse_sdef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
@@ -340,23 +340,27 @@ s_param *parse_fparam(lexer *lx) {
 	return param_new(type, vname);
 }
 
-s_param *parse_fparam_list(lexer *lx) {
+vector parse_fparam_list(lexer *lx) {
+	//Initialize vector
+	vector params;
+	vector_init(&params, VECTOR_EMPTY);
+
 	//Return NULL for a blank list
 	if (lex_peek(lx).type == TOK_RPR)
-		return NULL;
+		return params;
 
 	//Parse initial item
-	s_param *param = parse_fparam(lx);
+	s_param *p = parse_fparam(lx);
+	vector_add(&params, p);
 
 	//Parse multiple declarations
-	s_param *param_ex = param;
 	while (lex_peek(lx).type == TOK_CMM) {
 		lex_adv(lx);
-		param_ex->next = parse_fparam(lx);
-		param_ex = param_ex->next;
+		p = parse_fparam(lx);
+		vector_add(&params, p);
 	}
 
-	return param;
+	return params;
 }
 
 //Parse a function definition
@@ -378,8 +382,10 @@ ast_n *parse_fdef(lexer *lx) {
 	//Enter function scope
 	symtable_scope_enter(&lx->stb);
 	lx->stb.func = s;
-	for (s_param *p = f_type->param; p != NULL; p = p->next)
+	for (int i=0; i<f_type->param.len; i++) {
+		s_param *p = f_type->param.table[i];
 		symtable_def(&lx->stb, p->name, p->type);
+	}
 
 	//Create node and parse body
 	ast_n *node = astn_new(DECL, DECL_FUNC);
@@ -393,13 +399,13 @@ ast_n *parse_fdef(lexer *lx) {
 	return node;
 }
 
-s_param *parse_sdef_body(lexer *lx) {
+vector parse_sdef_body(lexer *lx) {
 	//Advance past '{'
 	lex_adv(lx);
 
 	//Parse list of declarations
-	s_param *m_list = NULL;
-	s_param *m_prev = NULL;
+	vector memb;
+	vector_init(&memb, VECTOR_EMPTY);
 	while (lex_peek(lx).type != TOK_RBR) {
 		if (lex_peek(lx).type == TOK_END) {
 			printf("ERROR: Expected '}' before end of file\n");
@@ -415,14 +421,8 @@ s_param *parse_sdef_body(lexer *lx) {
 		s_type *mtype = parse_decltr(lx, type_clone(base_type), &mname);
 		if (mname != NULL) {
 			//Create new member
-			s_param *memb_ex = param_new(mtype, mname);
-			if (m_list == NULL) {
-				m_list = memb_ex;
-				m_prev = m_list;
-			} else {
-				m_prev->next = memb_ex;
-				m_prev = memb_ex;
-			}
+			s_param *m = param_new(mtype, mname);
+			vector_add(&memb, m);
 		} else {
 			printf("ERROR: Declaration declares nothing\n");
 		}
@@ -439,7 +439,7 @@ s_param *parse_sdef_body(lexer *lx) {
 	}
 	lex_adv(lx);
 
-	return m_list;
+	return memb;
 }
 
 //Parse a struct type
@@ -460,14 +460,12 @@ s_type *parse_sdef(lexer *lx) {
 
 	//Get identifier and member list
 	char *tname = NULL;
-	s_param *m_list = NULL;
 	if (lex_peek(lx).type == TOK_IDENT) {
 		tname = lex_peek(lx).str;
 		lex_adv(lx);
 	}
 	if (lex_peek(lx).type == TOK_LBR)
-		m_list = parse_sdef_body(lx);
-	type->memb = m_list;
+		type->param = parse_sdef_body(lx);
 
 	/* 
 	 * Four cases:
@@ -477,20 +475,21 @@ s_type *parse_sdef(lexer *lx) {
 	 * invalid (no name and no list)
 	 */
 	if (tname == NULL) {
-		if (m_list == NULL) {
+		if (type->param.len == VECTOR_EMPTY) {
 			printf("ERROR: Expected '{' or identifier before ...\n");
 			return NULL;
 		} 
 	} else {
 		symbol *s = NULL;
-		if (m_list == NULL) {
+		if (type->param.len == VECTOR_EMPTY) {
 			s = symtable_search(&lx->stb, tname);
 			if (s == NULL) {
 				printf("ERROR: Undefined struct '%s'\n", tname);
 				return NULL;
 			}
+		} else {
+			s = symtable_def(&lx->stb, tname, type);
 		}
-		s = symtable_def(&lx->stb, tname, type);
 	}
 
 	return type;
@@ -822,7 +821,7 @@ ast_n *parse_expr_unary(lexer *lx) {
 	return node;
 }
 
-//TODO: also include function calls/array accessors
+//TODO: implement dereference & member access
 ast_n *parse_expr_postfix(lexer *lx) {
 	ast_n *node = parse_expr_primary(lx);
 

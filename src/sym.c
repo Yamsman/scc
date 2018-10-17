@@ -11,7 +11,7 @@
 void symtable_init(symtable *stb) {
 	stb->s_global = malloc(sizeof(struct SCOPE));
 	stb->s_cur = stb->s_global;
-	map_init(&stb->s_global->table, 16);
+	map_init(&stb->s_global->table, MAP_DEFAULT);
 	stb->s_global->prev = NULL;
 	stb->func = NULL;
 	return;
@@ -36,7 +36,7 @@ void symtable_close(symtable *stb) {
 void symtable_scope_enter(symtable *stb) {
 	scope *sc = malloc(sizeof(struct SCOPE));
 	sc->prev = stb->s_cur;
-	map_init(&sc->table, 16);
+	map_init(&sc->table, MAP_DEFAULT);
 	stb->s_cur = sc;
 	return;
 }
@@ -125,8 +125,8 @@ symbol *sym_new(char *name, s_type *type) {
 	s->name = name;
 	s->type = type;
 	if (type->kind == TYPE_FUNC) {
-		vector_init(&s->lvars, 16);
-		map_init(&s->labels, 16);
+		vector_init(&s->lvars, VECTOR_EMPTY);
+		map_init(&s->labels, MAP_DEFAULT);
 	}
 
 	//Get base type from chain
@@ -173,10 +173,8 @@ s_type *type_new(int kind) {
 	type->ref = NULL;
 	type->ref_len = 0;
 
-	type->param = NULL;
+	vector_init(&type->param, VECTOR_EMPTY);
 	type->ret = NULL;
-
-	type->memb = NULL;
 	
 	return type;
 }
@@ -194,33 +192,20 @@ int type_compare_noref(s_type *a, s_type *b) {
 	//TODO: qualifiers
 	if (a->ref_len != b->ref_len) return 0;
 
-	if (a->kind == TYPE_FUNC) {
-		s_param *i = a->param;
-		s_param *j = b->param;
-		while (i != NULL) {
-			if (j == NULL) return 0;
-			if (!type_compare(i->type, j->type)) return 0;
-			i = i->next;
-			j = j->next;
-		}
-		if (j != NULL) return 0;
-		if (!type_compare(a->ret, b->ret)) return 0;
-	} else if (a->memb != NULL) {
-		s_param *i = a->memb;
-		s_param *j = b->memb;
-		while (i != NULL) {
-			if (j == NULL) return 0;
-			if (!type_compare(i->type, j->type)) return 0;
-			i = i->next;
-			j = j->next;
-		}
-		if (j != NULL) return 0;
+	//Compare parameters/members
+	if (a->param.len != b->param.len) return 0;
+	for (int i=0; i<a->param.len; i++) {
+		s_param *ap = a->param.table[i];
+		s_param *bp = b->param.table[i];
+		if (!type_compare(ap->type, bp->type)) return 0;
 	}
+	if (!type_compare(a->ret, b->ret)) return 0;
 
 	return 1;	
 }
 
 int type_compare(s_type *a, s_type *b) {
+	if (a == NULL && b == NULL) return 1;
 	if (a == NULL || b == NULL) return 0;
 	if (!type_compare_noref(a, b)) return 0;
 
@@ -243,15 +228,17 @@ void type_del(s_type *t) {
 	if (t->ref != NULL)
 		type_del(t->ref);
 
-	//Function data
+	//Function/struct data
+	for (int i=0; i<t->param.len; i++) {
+		if (t->kind == TYPE_FUNC) {
+			param_del(t->param.table[i]);
+		} else {
+			memb_del(t->param.table[i]);
+		}
+	}
+	vector_close(&t->param);
 	if (t->ret != NULL)
 		type_del(t->ret);
-	if (t->param != NULL)
-		param_del(t->param);
-
-	//Struct/union data
-	if (t->memb != NULL)
-		memb_del(t->memb);
 
 	free(t);
 	return;
@@ -261,7 +248,6 @@ s_param *param_new(s_type *type, char *name) {
 	s_param *param = malloc(sizeof(struct PARAM));
 	param->type = type;
 	param->name = name;
-	param->next = NULL;
 
 	return param;
 }
@@ -269,8 +255,6 @@ s_param *param_new(s_type *type, char *name) {
 void param_del(s_param *p) {
 	//Symbols created when parsing a function definition take "ownership"
 	//of the name and type pointers; hence, they are not freed here
-	if (p->next != NULL)
-		param_del(p->next);
 	free(p);
 }
 
@@ -279,7 +263,5 @@ void memb_del(s_param *m) {
 		type_del(m->type);
 	if (m->name != NULL)
 		free(m->name);
-	if (m->next != NULL)
-		param_del(m->next);
 	free(m);
 }

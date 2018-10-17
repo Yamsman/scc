@@ -41,19 +41,15 @@ typedef struct TYPE {
 	struct TYPE *ref;	//Next in reference chain
 	int ref_len;		//Length if array
 
-	//Function data
-	struct PARAM *param;	//List of function parameters
+	//Function/struct data
+	struct VECTOR param;	//List of function parameters/struct members
 	struct TYPE *ret;	//Return type
-
-	//Struct/union data
-	struct PARAM *memb;	//List of struct members
 } s_type;
 
 //Used for both function parameters & struct members
 typedef struct PARAM {
 	char *name;		//Parameter name
 	struct TYPE *type;	//Parameter type
-	struct PARAM *next;	//Next parameter in list
 } s_param;
 
 typedef struct SYMBOL {

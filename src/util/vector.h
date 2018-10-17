@@ -1,6 +1,10 @@
 #ifndef VECTOR_H
 #define VECTOR_H
 
+//Predefined sizes
+#define VECTOR_DEFAULT 0x10
+#define VECTOR_EMPTY 0x00
+
 typedef struct VECTOR {
 	void **table;
 	int len;
