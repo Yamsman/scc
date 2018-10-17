@@ -3,6 +3,7 @@
 #include <string.h>
 #include "sym.h"
 #include "ast.h"
+#include "err.h"
 #include "inst.h"
 #include "gen.h"
 #include "util/map.h"
@@ -156,7 +157,7 @@ void gen_expr_array(asm_f *f, ast_n *n) {
 	ast_n *ofs = n->dat.expr.right;
 	if (ofs->dat.expr.kind == EXPR_CONST) {
 		if (ofs->dat.expr.sym->type->kind != TYPE_INT) {
-			printf("ERROR: Array offset must be an integer\n");
+			c_error(NULL, "Array offset must be an integer\n");
 			return;
 		}
 		asmf_add_inst(f, mk_inst(INST_MOV, 2, 
@@ -364,7 +365,7 @@ void gen_stmt_goto(asm_f *f, ast_n *n) {
 	symbol *fsym = f->fsym;
 	symbol *lbl = NULL;
 	if ((lbl = map_get(&fsym->labels, n->dat.stmt.lbl)) == NULL) {
-		printf("ERROR: Label '%s' used but not defined\n",
+		c_error(NULL, "Label '%s' used but not defined\n",
 			n->dat.stmt.lbl);
 		return;
 	}
@@ -398,15 +399,15 @@ void gen_stmt(asm_f *f, ast_n *n) {
 			gen_stmt_label(f, n);
 			break;
 		case STMT_CASE:
-			printf("ERROR: Case label not inside switch statement\n");
+			c_error(NULL, "Case label not inside switch statement\n");
 			break;
 		case STMT_DEFAULT:
-			printf("ERROR: 'default' label not inside switch statement\n");
+			c_error(NULL, "'default' label not inside switch statement\n");
 			break;
 		case STMT_GOTO: gen_stmt_goto(f, n);		break;
 		case STMT_CONTINUE:
 			if (f->cont_tgt == NULL) {
-				printf("ERROR: 'continue' not inside loop\n");
+				c_error(NULL, "'continue' not inside loop\n");
 				break;
 			}
 			asmf_add_inst(f, mk_inst(INST_JMP, 1,
@@ -415,7 +416,7 @@ void gen_stmt(asm_f *f, ast_n *n) {
 			break;
 		case STMT_BREAK:
 			if (f->break_tgt == NULL) {
-				printf("ERROR: 'break' not inside loop or switch\n");
+				c_error(NULL, "'break' not inside loop or switch\n");
 				break;
 			}
 			asmf_add_inst(f, mk_inst(INST_JMP, 1,

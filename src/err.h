@@ -9,7 +9,7 @@ typedef struct SRC_POS {
 } s_pos;
 
 extern int c_errflag;
-void c_err(struct SRC_POS *pos, const char *msg, ...);
+void c_error(struct SRC_POS *pos, const char *msg, ...);
 void c_warn(struct SRC_POS *pos, const char *msg, ...);
 
 #endif

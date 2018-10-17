@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include "ast.h"
 
+struct SRC_POS tmp = {0, 0, NULL, NULL}; //temporary 
 ast_n *astn_new(int kind, int s_kind) {
 	ast_n *node = calloc(1, sizeof(struct AST_NODE));
 	node->kind = kind;
@@ -17,6 +18,7 @@ ast_n *astn_new(int kind, int s_kind) {
 			node->dat.stmt.kind = s_kind;
 			break;
 	}
+	node->loc = tmp;
 
 	return node;
 }

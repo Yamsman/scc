@@ -8,11 +8,12 @@
 #include "util/map.h"
 
 void ppd_defparams(lexer *lx) {
-	lx->tgt->pos++;
 	token *t = &lx->ahead;
+	s_pos *loc = &lx->tgt->loc;
+	lx->tgt->pos++;
 	lex_next(lx, 0);
 	if (t->nline) {
-		printf("ERROR: Expected ')' before newline\n");
+		c_error(loc, "Expected ')' before newline\n");
 		return;
 	}
 
@@ -20,7 +21,7 @@ void ppd_defparams(lexer *lx) {
 	//TODO: Proper error handling
 	while (t->type != TOK_RPR) {
 		if (t->nline) {
-			printf("ERROR: Unexpected end of line in macro parameter list\n");
+			c_error(loc, "Unexpected end of line in macro parameter list\n");
 			return;
 		}
 
@@ -28,18 +29,19 @@ void ppd_defparams(lexer *lx) {
 		lex_next(lx, 0);
 		if (t->type == TOK_IDENT) {
 		} else {
-			printf("ERROR: Expected identifier before ...\n");
+			c_error(loc, "Expected identifier\n");
 			break;
 		}
 	}
 }
 
 void ppd_define(lexer *lx) {
+	s_pos *loc = &lx->tgt->loc;
 	//Read macro name
 	lex_next(lx, 0);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
-		printf("ERROR: Invalid macro name\n");
+		c_error(loc, "Invalid macro name\n");
 
 	//Check for and read macro parameter list
 	//if (*lx->tgt->pos == '(')
@@ -50,7 +52,7 @@ void ppd_define(lexer *lx) {
 	char *start, *end;
 	while (isspace(*cur) && *cur != '\n') cur++;
 	if (cur == lx->tgt->pos && *cur != '\n')
-		printf("ERROR: No whitespace after macro name\n");
+		c_error(loc, "No whitespace after macro name\n");
 
 	start = cur;
 	while (*cur != '\n') {
@@ -71,7 +73,7 @@ void ppd_define(lexer *lx) {
 		for (int i=0; i<len; i++) {
 			if (buf[0] == '#' && buf[1] == '#' ||
 			    buf[len-2] == '#' && buf[len-1] == '#')
-				puts("'##' at beginning or end of macro");
+				c_error(loc, "'##' at beginning or end of macro");
 		}
 	}
 
@@ -83,7 +85,7 @@ void ppd_define(lexer *lx) {
 }
 
 void ppd_error(lexer *lx) {
-	
+	//c_error(lx->tgt->loc, ///
 }
 
 void ppd_if(lexer *lx) {
@@ -100,22 +102,23 @@ void ppd_ifndef(lexer *lx) {
 
 void ppd_include(lexer *lx) {
 	char *cur = lx->tgt->pos;
+	s_pos *loc = &lx->tgt->loc;
 	while (*cur == ' ') cur++;
 
 	//Get include type
 	char type = *cur++;
 	if (type != '<' && type != '"')
-		printf("ERROR: #include expects <fname> or \"fname\"\n");
+		c_error(loc, "#include expects <fname> or \"fname\"\n");
 
 	//Get filename
 	char *begin = cur;
 	char endc = (type == '"') ? '"' : '>';
 	while (*cur != endc) {
 		if (*cur == '\n') {
-			printf("ERROR: Expected '%c' before end of line\n", endc);
+			c_error(loc, "Expected '%c' before end of line\n", endc);
 			return;
 		} else if (*cur == '\0') {
-			printf("ERROR: Expected '%c' before end of file\n", endc);
+			c_error(loc, "Expected '%c' before end of file\n", endc);
 			return;
 		}
 		cur++;
@@ -146,7 +149,7 @@ void ppd_include(lexer *lx) {
 	strcpy(fdir, "/usr/include/");
 	strcat(fdir, fname);
 	if (!lex_open_file(lx, fdir)) {
-		printf("ERROR: Unable to open file '%s': ", fname);
+		c_error(loc, "Unable to open file '%s': ", fname);
 		fflush(stdout);
 		perror(NULL);
 		free(fdir);
@@ -159,7 +162,7 @@ void ppd_undef(lexer *lx) {
 	lex_next(lx, 0);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
-		printf("ERROR: Invalid macro name '%s'\n", mname.str);
+		c_error(&lx->tgt->loc, "Invalid macro name '%s'\n", mname.str);
 
 	//Check the global scope
 	symbol *s = map_get(&lx->stb.s_global->table, mname.str);

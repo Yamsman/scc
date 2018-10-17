@@ -1,6 +1,8 @@
 #ifndef AST_H
 #define AST_H
 
+#include "err.h"
+
 /*
  * Node enums
  */
@@ -101,6 +103,7 @@ typedef struct AST_NODE {
 			struct AST_NODE *else_body; //stmt
 		} stmt;
 	} dat;
+	struct SRC_POS loc;
 	struct AST_NODE *next;
 } ast_n;
 

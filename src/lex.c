@@ -30,7 +30,7 @@ lexer *lexer_init(char *fname) {
 	lx->ahead = BLANK_TOKEN;
 
 	if (!lex_open_file(lx, fname)) {
-		c_err(NULL, "Unable to open file '%s': ", fname);
+		c_error(NULL, "Unable to open file '%s': ", fname);
 		fflush(stderr);
 		perror(NULL);
 		free(lx);
@@ -47,11 +47,11 @@ int lex_open_file(lexer *lx, char *fname) {
 	if (!src_f) return 0;
 
 	//Read data from file
-	//fseek(src_f, 0, SEEK_END);
-	//int len = ftell(src_f);
-	int len = 500;
+	//TODO: use sys/stat.h to get file size
+	fseek(src_f, 0, SEEK_END);
+	int len = ftell(src_f);
 	char *buf = malloc(len+1);
-	//fseek(src_f, 0, SEEK_SET);
+	fseek(src_f, 0, SEEK_SET);
 	fread(buf, len, 1, src_f);
 	fclose(src_f);
 
@@ -74,6 +74,14 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 	n_tgt->type = type;
 	n_tgt->buf = buf;
 	n_tgt->pos = buf;
+
+	//Copy location for macro
+	if (type == TGT_MACRO) {
+		n_tgt->loc = lx->tgt->loc;
+	} else {
+		n_tgt->loc.line = 1;
+		n_tgt->loc.col = 0;
+	}
 
 	n_tgt->prev = lx->tgt;
 	lx->tgt = n_tgt;
@@ -113,6 +121,7 @@ enum NUM_STATUS {
 
 int lex_num(lexer *lx, token *t) {
 	char *cur = lx->tgt->pos;
+	s_pos *loc = &lx->tgt->loc;
 
 	//Read prefix
 	int base = 10;
@@ -121,11 +130,14 @@ int lex_num(lexer *lx, token *t) {
 		if (*(cur+1) == 'x') {
 			base = 16;
 			cur++;
-		} if (*(cur+1) == 'b') {
+			loc->col++;
+		} else if (*(cur+1) == 'b') {
 			base = 2;
 			cur++;
+			loc->col++;
 		}
 		cur++;
+		loc->col++;
 	}
 
 	//Read number
@@ -142,7 +154,7 @@ int lex_num(lexer *lx, token *t) {
 		//Handle floating-point characters
 		if (digit == '.') {
 			if (dec_state != S_NONE) {
-				printf("ERROR: Multiple decimal points in constant\n");
+				c_error(loc, "Multiple decimal points in constant\n");
 				goto n_end;
 			}
 			dec_state = S_INIT;
@@ -150,7 +162,7 @@ int lex_num(lexer *lx, token *t) {
 			continue;
 		} else if (digit == 'e' && base != 16) {
 			if (exp_state != S_NONE) {
-				printf("ERROR: Multiple exponents in constant\n");
+				c_error(loc, "Multiple exponents in constant\n");
 				goto n_end;
 			}
 			exp_state = S_INIT;
@@ -169,13 +181,13 @@ int lex_num(lexer *lx, token *t) {
 			dval = 10 + (digit - 'a');
 		case '9': case '8':
 			if (base == 8) {
-				printf("ERROR: Invalid digit in octal constant\n");
+				c_error(loc, "Invalid digit in octal constant\n");
 				goto n_end;
 			}
 		case '7': case '6': case '5':
 		case '4': case '3': case '2':
 			if (base == 2) {
-				printf("ERROR: Invalid digit in binary constant\n");
+				c_error(loc, "Invalid digit in binary constant\n");
 				goto n_end;
 			}
 		case '1': case '0':
@@ -187,13 +199,14 @@ int lex_num(lexer *lx, token *t) {
 
 		default: goto n_end;
 		}
+		loc->col++;
 	}
 
 n_end:  if (dec_state != S_NONE && base != 10) {
-		printf("ERROR: Decimal point in non-base 10 constant\n");
+		c_error(loc, "Decimal point in non-base 10 constant\n");
 	}
 	if (exp_state == S_INIT) {
-		printf("ERROR: Missing exponent in constant\n");
+		c_error(loc, "Missing exponent in constant\n");
 	}
 
 	/*
@@ -229,8 +242,9 @@ n_end:  if (dec_state != S_NONE && base != 10) {
 }
 
 void lex_next(lexer *lx, int m_exp) {
-	token t = {-1, -1, NULL};
+	token t = {-1, -1, NULL, lx->tgt->loc};
 	lex_target *tgt = lx->tgt;
+	s_pos *loc = &tgt->loc;
 
 	//Use ungotten tokens
 	token_n *pre = lx->pre;
@@ -245,10 +259,16 @@ void lex_next(lexer *lx, int m_exp) {
 	//Count the beginning of a file as a newline
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
 reset:	while (isspace(*tgt->pos)) {
-		if (*tgt->pos == '\n') nline = 1;
+		if (*tgt->pos == '\n') { 
+			nline = 1;
+			loc->col = 0;
+			loc->line++;
+		}
 		tgt->pos++;
+		loc->col++;
 	}
 	t.nline = nline;
+	t.loc = *loc;
 
 	//Get next char
 	int len;
@@ -301,7 +321,7 @@ reset:	while (isspace(*tgt->pos)) {
 			if (*cur == '#') {
 				cur++, t.type = TOK_DNS;
 			} else if (!nline) {
-				printf("Error: stray '#' in source\n");
+				c_error(loc, "Stray '#' in source\n");
 			}
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
@@ -354,7 +374,7 @@ reset:	while (isspace(*tgt->pos)) {
 						tgt->pos = cur;
 						goto reset;
 					} else if (*cur == '\0') {
-						puts("ERROR: Unterminated comment");
+						c_error(loc, "Unterminated comment\n");
 						t.type = TOK_END;
 						goto end;
 					}
@@ -492,7 +512,8 @@ reset:	while (isspace(*tgt->pos)) {
 			t.type = TOK_END;
 			break;
 	}
-end:	tgt->pos = cur;
+end:	loc->col += (cur - begin);
+	tgt->pos = cur;
 	lx->ahead = t;
 	
 	return;
@@ -502,12 +523,10 @@ end:	tgt->pos = cur;
 void lex_ppd(lexer *lx) {
 	//Read directive
 	lex_next(lx, 0);
-	switch (lex_peek(lx).type) {
+	token ppd = lex_peek(lx);
+	switch (ppd.type) {
 		case TOK_KW_DEFINE:  ppd_define(lx);			break;
-		case TOK_KW_ELIF:    puts("ERROR: #elif before #if");	break;
-		case TOK_KW_ELSE:    puts("ERROR: #else before #if");	break;
-		case TOK_KW_ENDIF:   puts("ERROR: #endif before #if");	break;
-		case TOK_KW_ERROR:   //ppd_error(lx);			break;
+		case TOK_KW_ERROR:   ppd_error(lx);			break;
 		case TOK_KW_IF:      //ppd_if(lx);			break;
 		case TOK_KW_IFDEF:   //ppd_ifdef(lx);			break;
 		case TOK_KW_IFNDEF:  /*ppd_ifndef(lx);*/		break;
@@ -515,8 +534,17 @@ void lex_ppd(lexer *lx) {
 		case TOK_KW_LINE:    break;
 		case TOK_KW_PRAGMA:  break;
 		case TOK_KW_UNDEF:   ppd_undef(lx);			break;
+		case TOK_KW_ELIF:
+			c_error(&ppd.loc, "#elif before #if\n");
+			break;
+		case TOK_KW_ELSE:
+			c_error(&ppd.loc, "#else before #if\n");
+			break;
+		case TOK_KW_ENDIF:   
+			c_error(&ppd.loc, "#endif before #if\n");
+			break;
 		default:
-			puts("ERROR: Invalid preprocessor directive");
+			c_error(&ppd.loc, "Invalid preprocessor directive");
 			break;
 	}
 

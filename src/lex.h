@@ -2,6 +2,7 @@
 #define LEX_H
 
 #include "sym.h"
+#include "err.h"
 
 enum TOK_TYPES {
 	TOK_END,
@@ -77,15 +78,16 @@ enum TGT_TYPE {
 };
 
 typedef struct TOKEN {
-	int type;
-	int nline;	//Preceeded by newline
-	char *str;
+	int type;		//Kind of token
+	int nline;		//Preceeded by newline
+	char *str;		//TODO: replace with union for value
+	struct SRC_POS loc;	//Location in file
 } token;
 
 //Used for ungetting tokens
 typedef struct TOKEN_NODE {
-	struct TOKEN t;
-	struct TOKEN_NODE *next;
+	struct TOKEN t;			//Token
+	struct TOKEN_NODE *next;	//Pointer to next token
 } token_n;
 
 typedef struct LEX_TARGET {
@@ -93,6 +95,7 @@ typedef struct LEX_TARGET {
 	int type;			//File or macro
 	char *buf;			//Beginning of buffer
 	char *pos;			//Current position in buffer
+	struct SRC_POS loc;		//Current location in file
 	struct LEX_TARGET *prev;	//Pointer to previous target
 } lex_target;
 
@@ -115,6 +118,7 @@ void lex_next(struct LEXER *lx, int m_exp);
 struct TOKEN lex_peek(struct LEXER *lx);
 void lex_adv(struct LEXER *lx);
 void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);
+struct SRC_POS lex_loc(struct LEXER *lx);
 
 int is_type_spec(struct TOKEN t);
 struct TOKEN_NODE *make_tok_node(struct TOKEN t);
