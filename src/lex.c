@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include "sym.h"
 #include "err.h"
 #include "lex.h"
@@ -22,12 +23,13 @@ void close_kwtable() {
 	return;
 }
 
-token BLANK_TOKEN = {-1, -1, NULL};
+token BLANK_TOKEN = {-1, -1, 0, 0};
 lexer *lexer_init(char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
 	lx->tgt = NULL;
 	lx->pre = NULL;
 	lx->ahead = BLANK_TOKEN;
+	vector_init(&lx->flist, VECTOR_EMPTY);
 
 	if (!lex_open_file(lx, fname)) {
 		c_error(NULL, "Unable to open file '%s': ", fname);
@@ -54,15 +56,23 @@ int lex_open_file(lexer *lx, char *fname) {
 	fseek(src_f, 0, SEEK_SET);
 	fread(buf, len, 1, src_f);
 	fclose(src_f);
+	buf[len] = '\0';
 
+	vector_add(&lx->flist, fname);
 	lexer_tgt_open(lx, fname, TGT_FILE, buf);
 	return 1;
 }
 
 void lexer_close(lexer *lx) {
+	//Pop all targets if any remain
 	while (lx->tgt != NULL)
 		lexer_tgt_close(lx);
 
+	//Free filenames
+	for (int i=0; i<lx->flist.len; i++)
+		free(lx->flist.table[i]);
+
+	vector_close(&lx->flist);
 	symtable_close(&lx->stb);
 	free(lx);
 	return;
@@ -81,6 +91,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 	} else {
 		n_tgt->loc.line = 1;
 		n_tgt->loc.col = 0;
+		n_tgt->loc.fname = name;
 	}
 
 	n_tgt->prev = lx->tgt;
@@ -91,7 +102,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 void lexer_tgt_close(lexer *lx) {
 	lex_target *tgt = lx->tgt;
 	if (tgt->type == TGT_FILE) {
-		free(tgt->name);
+		//Name is freed when lexer is closed
 		free(tgt->buf);
 	}
 	lx->tgt = tgt->prev;
@@ -105,9 +116,9 @@ int lex_ident(lexer *lx, token *t) {
 	while (isalnum(*cur) || *cur == '_') 
 		cur++;
 	int len = cur - lx->tgt->pos;
-	t->str = malloc(len+1);
-	memcpy(t->str, lx->tgt->pos, len);
-	t->str[len] = '\0';
+	t->dat.sval = malloc(len+1);
+	memcpy(t->dat.sval, lx->tgt->pos, len);
+	t->dat.sval[len] = '\0';
 	t->type = TOK_IDENT;
 	return len;
 }
@@ -123,18 +134,35 @@ int lex_num(lexer *lx, token *t) {
 	char *cur = lx->tgt->pos;
 	s_pos *loc = &lx->tgt->loc;
 
-	//Read prefix
+	//Read sign
+	int sign = 1;
+	if (*cur == '-' || *cur == '+') {
+		sign = (*cur == '-') ? -1 : 1;
+		cur++;
+		loc->col++;
+	}
+
+	//Read base prefix
 	int base = 10;
 	if (*cur == '0' && isalnum(*(cur+1))) {
 		base = 8;
-		if (*(cur+1) == 'x') {
-			base = 16;
-			cur++;
-			loc->col++;
-		} else if (*(cur+1) == 'b') {
-			base = 2;
-			cur++;
-			loc->col++;
+		char nextc = tolower(*(cur+1));
+		switch (nextc) {
+			case 'x': case 'X':
+				base = 16;
+				cur++;
+				loc->col++;
+				break;
+			case 'b': case 'B':
+				base = 2;
+				cur++;
+				loc->col++;
+				break;
+			default:
+				if (!isdigit(nextc)) {
+					//invalid prefix ...
+				}
+				break;
 		}
 		cur++;
 		loc->col++;
@@ -143,10 +171,10 @@ int lex_num(lexer *lx, token *t) {
 	//Read number
 	int dec_state = S_NONE; 
 	int exp_state = S_NONE;
-	long long int_val = 0;
-	long long frac_val = 0;
-	long long exp_val = 0;
-	long long *tgt_val = &int_val;
+	unsigned long long int_val = 0;
+	unsigned long long frac_val = 0;
+	unsigned long long exp_val = 0;
+	unsigned long long *tgt_val = &int_val;
 	for (;;cur++) {
 		char digit = tolower(*cur);
 		int dval = digit - '0';
@@ -160,7 +188,7 @@ int lex_num(lexer *lx, token *t) {
 			dec_state = S_INIT;
 			tgt_val = &frac_val;
 			continue;
-		} else if (digit == 'e' && base != 16) {
+		} else if (tolower(digit) == 'e' && base != 16) {
 			if (exp_state != S_NONE) {
 				c_error(loc, "Multiple exponents in constant\n");
 				goto n_end;
@@ -175,9 +203,8 @@ int lex_num(lexer *lx, token *t) {
 		switch (digit) {
 		case 'f': case 'e': case 'd':
 		case 'c': case 'b': case 'a':
-			if (base == 10) {
+			if (base == 10)
 				goto n_end;
-			}
 			dval = 10 + (digit - 'a');
 		case '9': case '8':
 			if (base == 8) {
@@ -201,48 +228,78 @@ int lex_num(lexer *lx, token *t) {
 		}
 		loc->col++;
 	}
-
-n_end:  if (dec_state != S_NONE && base != 10) {
+n_end:  if (dec_state != S_NONE && base != 10)
 		c_error(loc, "Decimal point in non-base 10 constant\n");
-	}
-	if (exp_state == S_INIT) {
+	if (exp_state == S_INIT)
 		c_error(loc, "Missing exponent in constant\n");
-	}
 
-	/*
+	//Determine kind
+	s_type *ty = type_new(TYPE_INT);
+	if (dec_state != S_NONE || exp_state == S_DONE)
+		ty->kind = TYPE_FLOAT;
+	ty->size = SIZE_LONG;
+	ty->is_signed = 1;
+	t->dtype = ty;
+
 	//Read suffix
-	s_type *ty;
-	if (dec_state != S_NONE || exp_state == S_DONE) {
-		v_type = TYPE_FLOAT;
-	} else {
-		v_type = TYPE_INT;
-	}
-
-	char *sffx_beg = cur;
+	s_pos suffix_loc = *loc;
+	int l_count = 0, u_count = 0, f_count = 0;
 	while (isalpha(*cur)) {
 		switch (tolower(*cur)) {
-			case 'l':
-				if (t->kind == TYPE_INT)
-					t->size = 8; //long
-				else if (v_type == TYPE_LONG)
-					t->size = TYPE_LONG_LONG;
+			case 'l': //Long flag
+				l_count++; 
 				break;
-			case 'u':
-				t->is_signed = 0;
+			case 'u': //Unsigned flag
+				u_count++;
 				break;
+			case 'f': //Float flag
+				ty->kind = TYPE_FLOAT;
+				f_count++;
+				break;
+			default: goto s_end;
 		}
 		cur++;
+		loc->col++;
 	}
-	*/
 
-	//TODO: verification
+	//Suffix verification
+	if (f_count > 1) goto s_err;
+	if (ty->kind == TYPE_INT) {
+		if (u_count > 1) goto s_err;
+		if (l_count > 2) goto s_err;
+		if (l_count == 2) //Promote to long long
+			ty->size = SIZE_LONG_LONG;
+	} else {
+		if (u_count > 0) goto s_err;
+		if (l_count > 1) goto s_err;
+		if (l_count != 0) //Promote to double
+			ty->size = SIZE_LONG_LONG;
+	}
+
+	//Set token data
+s_end:	if (ty->kind == TYPE_INT) {
+		if (!ty->is_signed) {
+			t->dat.uval = int_val;
+		} else {
+			t->dat.ival = int_val * sign;
+		}
+	} else {
+		//Calculate value from integer, fraction, and exponent parts
+		double dec = frac_val/pow(10, floor(log10(frac_val)+1));
+		t->dat.fval = int_val;
+		if (frac_val != 0) t->dat.fval += dec;
+		t->dat.fval *= pow(10, exp_val);
+	}
 	int len = cur - lx->tgt->pos;
-
 	return len;
+
+	//Suffix error handling
+s_err:	c_error(&suffix_loc, "Invalid suffix on constant\n");
+	goto s_end;
 }
 
 void lex_next(lexer *lx, int m_exp) {
-	token t = {-1, -1, NULL, lx->tgt->loc};
+	token t = {-1, -1, lx->tgt->loc, 0, NULL};
 	lex_target *tgt = lx->tgt;
 	s_pos *loc = &tgt->loc;
 
@@ -289,7 +346,10 @@ reset:	while (isspace(*tgt->pos)) {
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ':':	t.type = TOK_COL;	break;
 		case ',':	t.type = TOK_CMM; 	break;
-		case '.':	t.type = TOK_PRD; 	break;
+		case '.':	
+			if (isdigit(*cur)) goto num_case;
+			t.type = TOK_PRD; 
+			break;
 		case '{':	t.type = TOK_LBR; 	break;
 		case '}':	t.type = TOK_RBR; 	break;
 		case '(':	t.type = TOK_LPR; 	break;
@@ -311,9 +371,9 @@ reset:	while (isspace(*tgt->pos)) {
 			}
 			
 			len = cur - (begin+1);
-			t.str = malloc(len+1);
-			memcpy(t.str, (begin+1), len);
-			t.str[len] = '\0';
+			t.dat.sval = malloc(len+1);
+			memcpy(t.dat.sval, (begin+1), len);
+			t.dat.sval[len] = '\0';
 			cur++;
 			break;
 		case '#':
@@ -326,6 +386,7 @@ reset:	while (isspace(*tgt->pos)) {
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
 		case '+':
+			if (isdigit(*cur)) goto num_case;
 			t.type = TOK_ADD;
 			if (*cur == '=') {
 				cur++, t.type = TOK_ASSIGN_ADD;
@@ -334,6 +395,7 @@ reset:	while (isspace(*tgt->pos)) {
 			}
 			break;
 		case '-':
+			if (isdigit(*cur)) goto num_case;
 			t.type = TOK_SUB;
 			if (*cur == '=') {
 				cur++, t.type = TOK_ASSIGN_SUB;
@@ -463,17 +525,17 @@ reset:	while (isspace(*tgt->pos)) {
 
 			//Check if matches keyword
 			//String is not freed yet; could be used as macro name
-			int kw_id = (long long)map_get(&kw_table, t.str); 
+			int kw_id = (long long)map_get(&kw_table, t.dat.sval); 
 			if (kw_id > 0)
 				t.type = kw_id;
 
 			//Check for macro expansion
-			symbol *s = symtable_search(&lx->stb, t.str);
+			symbol *s = symtable_search(&lx->stb, t.dat.sval);
 			if (m_exp && s != NULL && s->mac_exp != NULL) {
 				//Check target stack to prevent reexpansion
 				int expanded = 0;
 				for (lex_target *i = tgt; i != NULL; i = i->prev) {
-					if (i->type == TGT_MACRO && !strcmp(i->name, t.str)) {
+					if (i->type == TGT_MACRO && !strcmp(i->name, t.dat.sval)) {
 						expanded = 1;
 						break;
 					}
@@ -482,29 +544,35 @@ reset:	while (isspace(*tgt->pos)) {
 
 				//Expand the macro
 				tgt->pos = cur;
-				lexer_tgt_open(lx, t.str, TGT_MACRO, s->mac_exp);
+				lexer_tgt_open(lx, t.dat.sval, TGT_MACRO, s->mac_exp);
 				tgt = lx->tgt;
 
-				free(t.str);
-				t.str = NULL;
+				free(t.dat.sval);
+				t.dat.sval = NULL;
 				goto reset;
 			}
 
 			//If the token is an identifier, free the string
 			if (kw_id != 0) {
-				free(t.str);
-				t.str = NULL;
+				free(t.dat.sval);
+				t.dat.sval = NULL;
 			}
 
 			} break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
 			//Read number
-			cur--;
+num_case:		cur--;
 			int len = lex_num(lx, &t);
 			cur += len;
 
-			//printf("%s -> %f\n", t.str, atof(t.str));
+			/*
+			if (t.dtype->kind == TYPE_INT)
+				printf("%lld\n", t.dat.ival);
+			else if (t.dtype->kind == TYPE_FLOAT)
+				printf("%lf\n", t.dat.fval);
+			*/
+			free(t.dtype); //temporary
 			t.type = TOK_CONST;
 			break;
 		default: 
@@ -544,7 +612,7 @@ void lex_ppd(lexer *lx) {
 			c_error(&ppd.loc, "#endif before #if\n");
 			break;
 		default:
-			c_error(&ppd.loc, "Invalid preprocessor directive");
+			c_error(&ppd.loc, "Invalid preprocessor directive\n");
 			break;
 	}
 

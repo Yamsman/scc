@@ -3,6 +3,7 @@
 
 #include "sym.h"
 #include "err.h"
+#include "util/vector.h"
 
 enum TOK_TYPES {
 	TOK_END,
@@ -78,10 +79,17 @@ enum TGT_TYPE {
 };
 
 typedef struct TOKEN {
-	int type;		//Kind of token
-	int nline;		//Preceeded by newline
-	char *str;		//TODO: replace with union for value
-	struct SRC_POS loc;	//Location in file
+	int type;			//Kind of token
+	int nline;			//Preceeded by newline
+	struct SRC_POS loc;		//Location in file
+
+	union { 			//Data for literals
+		long long ival;		//Integer constant
+		unsigned long long uval;//Unsigned integer constant
+		double fval;		//Float constant
+		char *sval;		//String literal
+	} dat;
+	struct TYPE *dtype;		//Type of literal
 } token;
 
 //Used for ungetting tokens
@@ -103,6 +111,7 @@ typedef struct LEXER {
 	struct LEX_TARGET *tgt;		//Input stack
 	struct TOKEN_NODE *pre;		//Pre-lexed tokens
 	struct TOKEN ahead;		//Current token
+	struct VECTOR flist;		//List of processed files
 	struct SYMTABLE stb;		//Symbol table
 } lexer;
 

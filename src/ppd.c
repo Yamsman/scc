@@ -78,7 +78,7 @@ void ppd_define(lexer *lx) {
 	}
 
 	//Add to symtable
-	symbol *sym = symtable_def(&lx->stb, mname.str, type_new(TYPE_MACRO));
+	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, type_new(TYPE_MACRO));
 	sym->mac_exp = buf;
 	lx->tgt->pos = end;
 	return;
@@ -162,13 +162,13 @@ void ppd_undef(lexer *lx) {
 	lex_next(lx, 0);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
-		c_error(&lx->tgt->loc, "Invalid macro name '%s'\n", mname.str);
+		c_error(&lx->tgt->loc, "Invalid macro name '%s'\n", mname.dat.sval);
 
 	//Check the global scope
-	symbol *s = map_get(&lx->stb.s_global->table, mname.str);
+	symbol *s = map_get(&lx->stb.s_global->table, mname.dat.sval);
 	if (s == NULL || s->type->kind != TYPE_MACRO)
 		return;
-	map_remove(&lx->stb.s_global->table, mname.str);
+	map_remove(&lx->stb.s_global->table, mname.dat.sval);
 
 	return;
 }

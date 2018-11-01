@@ -9,9 +9,9 @@
 
 enum X86_64_IDS {
 	#define reg(id, str) id,
-	#define opc(id, str) id,
+	#define inst(id, str) id,
 	#include "asm.inc"
-	#undef opc
+	#undef inst
 	#undef reg
 };
 

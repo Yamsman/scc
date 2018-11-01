@@ -7,10 +7,10 @@ int c_errflag = 0;
 
 void c_error(s_pos *pos, const char *msg, ...) {
 	if (pos != NULL) {
-		//fprintf(stderr, "%s:%i:%i: ",
-		//	pos->fname, pos->line, pos->col);
-		fprintf(stderr, "NOFILE:%i:%i: ",
-			pos->line, pos->col);
+		fprintf(stderr, "%s:%i:%i: ",
+			pos->fname, pos->line, pos->col);
+		//fprintf(stderr, "???:%i:%i: ",
+		//	pos->line, pos->col);
 	}
 	va_list args;
 	va_start(args, msg);

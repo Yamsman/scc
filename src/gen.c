@@ -170,14 +170,32 @@ void gen_expr_array(asm_f *f, ast_n *n) {
 }
 
 void gen_expr_call(asm_f *f, ast_n *n) {
-	//Push args to stack
 	symbol *fsym = n->dat.decl.sym;
-	//vector
-	//for (int i=fsym->params.len-1; i>=0; i++) {
+
+	//Push args to stack
+	vector params = fsym->type->param;
+	ast_n *arg = n->dat.expr.left;
+	for (int i=params.len-1; i>=0; i++) {
+		symbol *psym = params.table[i];	//Symbol of defined parameter
+		symbol *asym = arg->dat.expr.left->dat.expr.sym; //Symbol of call arg
+
+		//Check types
+		if (psym->type->kind != asym->type->kind)
+			c_error(NULL, "Mismatching types in function call\n");
+
+		//Generate the expression
+		gen_expr(f, arg);
+
+		//Push the argument
 		
-	//}
+		arg = arg->next;
+	}
 
 	//call function
+	return;
+}
+
+void gen_expr_immd(asm_f *f, ast_n *n) {
 	return;
 }
 
@@ -241,8 +259,11 @@ void gen_expr(asm_f *f, ast_n *n) {
 		case EXPR_INC_POST:
 		case EXPR_DEC_POST:
 		case EXPR_IDENT:
+			//gen_expr_var
+			break;
 		case EXPR_CONST:
 		case EXPR_STR:
+			gen_expr_immd(f, n);
 			break;
 	}
 
@@ -360,7 +381,7 @@ void gen_stmt_loop(asm_f *f, ast_n *n) {
 
 void gen_stmt_label(asm_f *f, ast_n *n) {
 	//Copy the symbol name to a new string
-	char *lsrc = n->dat.expr.sym->name;
+	char *lsrc = n->dat.expr.sym->name; //here
 	char *str = malloc(strlen(lsrc)+1);
 	strncpy(str, lsrc, strlen(lsrc));
 

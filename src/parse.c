@@ -66,7 +66,7 @@ ast_n *parse(lexer *lx) {
 				case TOK_SEM: fdef = 0;   break; 
 				case TOK_LBR: fdef = par; break;
 				case TOK_END:
-					puts("ERROR: Premature end of input");
+					c_error(NULL, "Premature end of input\n");
 					return NULL;
 			}
 			token_n *tn = make_tok_node(t);
@@ -228,7 +228,7 @@ s_type *parse_decltr_back(lexer *lx, s_type *base_type) {
 
 		//TODO: const_expr
 		type = type_new(TYPE_PTR);
-		type->ref_len = atoi(lex_peek(lx).str);
+		type->ref_len = atoi(lex_peek(lx).dat.sval);
 		lex_adv(lx);
 
 		if (lex_peek(lx).type != TOK_RBK) {
@@ -292,7 +292,7 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
 	token t = lex_peek(lx);
 	if (t.type == TOK_IDENT) {
 		lex_adv(lx);
-		*vname = t.str;
+		*vname = t.dat.sval;
 	}
 	return parse_decltr_back(lx, type);
 }
@@ -461,7 +461,7 @@ s_type *parse_sdef(lexer *lx) {
 	//Get identifier and member list
 	char *tname = NULL;
 	if (lex_peek(lx).type == TOK_IDENT) {
-		tname = lex_peek(lx).str;
+		tname = lex_peek(lx).dat.sval;
 		lex_adv(lx);
 	}
 	if (lex_peek(lx).type == TOK_LBR)
@@ -821,6 +821,21 @@ ast_n *parse_expr_unary(lexer *lx) {
 	return node;
 }
 
+ast_n *parse_expr_arglist(lexer *lx) {
+	ast_n *node = parse_expr_assign(lx);
+
+	//Arguments will be evaluated in reverse order, so the list will be backwards
+	ast_n *head = node;
+	while (lex_peek(lx).type == TOK_CMM) {
+		lex_adv(lx);
+		node = parse_expr_assign(lx);
+		node->next = head;
+		head = node;
+	}
+
+	return head;
+}
+
 //TODO: implement dereference & member access
 ast_n *parse_expr_postfix(lexer *lx) {
 	ast_n *node = parse_expr_primary(lx);
@@ -855,7 +870,7 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			}
 
 			//Get parameter list
-			n_node->dat.expr.right = parse_expr(lx);
+			n_node->dat.expr.right = parse_expr_arglist(lx);
 			
 			if (lex_peek(lx).type != TOK_RPR) {
 				//Missing ')'
@@ -888,14 +903,14 @@ ast_n *parse_expr_primary(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT: //TODO: improve handling of undefined variables
 			lex_adv(lx);
-			symbol *s = symtable_search(&lx->stb, t.str);
+			symbol *s = symtable_search(&lx->stb, t.dat.sval);
 			node = astn_new(EXPR, EXPR_IDENT);
 			if (s != NULL) {
 				node->dat.expr.sym = s;
 			} else {
-				printf("ERROR: Undeclared variable \"%s\"\n", t.str);
+				printf("ERROR: Undeclared variable \"%s\"\n", t.dat.sval);
 			}
-			free(t.str);
+			free(t.dat.sval);
 
 			return node;
 		case TOK_CONST:
@@ -1168,7 +1183,7 @@ ast_n *parse_stmt_label(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT:
 			node = astn_new(STMT, STMT_LABEL);
-			node->dat.expr.sym = symtable_def_label(&lx->stb, t.str);
+			node->dat.expr.sym = symtable_def_label(&lx->stb, t.dat.sval);
 			lex_adv(lx);
 			break;
 		case TOK_KW_CASE:
@@ -1205,7 +1220,7 @@ ast_n *parse_stmt_jump(lexer *lx) {
 				//Expected identifier before...
 			}
 			lex_adv(lx);
-			node->dat.stmt.lbl = t.str;
+			node->dat.stmt.lbl = t.dat.sval;
 			break;
 		case TOK_KW_CONTINUE:
 			lex_adv(lx);

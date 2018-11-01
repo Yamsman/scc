@@ -165,8 +165,9 @@ void sym_del(symbol *s) {
 s_type *type_new(int kind) {
 	s_type *type = malloc(sizeof(struct TYPE));
 	type->kind = kind;
+	type->size = -1;
 	type->s_class = CLASS_UNDEF;
-	type->is_signed = 0;
+	type->is_signed = 1;
 	type->is_const = 0;
 	type->is_volatile = 0;
 
@@ -248,6 +249,13 @@ s_param *param_new(s_type *type, char *name) {
 	s_param *param = malloc(sizeof(struct PARAM));
 	param->type = type;
 	param->name = name;
+
+	//Get base type
+	//TODO: just replace s_param with symbol
+	s_type *bt_ptr = type;
+	while (bt_ptr->ref != NULL) 
+		bt_ptr = bt_ptr->ref;
+	param->btype = bt_ptr;
 
 	return param;
 }

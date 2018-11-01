@@ -7,9 +7,9 @@
 
 const char *x86_64_str[] = {
 	#define reg(id, str) str,
-	#define opc(id, str) str,
+	#define inst(id, str) str,
 	#include "asm.inc"
-	#undef opc
+	#undef inst
 	#undef reg
 };
 

@@ -19,6 +19,13 @@ enum TYPE_KIND {
 	TYPE_UNION
 };
 
+enum TYPE_SIZE {
+	SIZE_CHAR = 1,
+	SIZE_SHORT = 2,
+	SIZE_LONG = 4,
+	SIZE_LONG_LONG = 8
+};
+
 enum TYPE_CLASS {
 	CLASS_UNDEF,
 	//CLASS_TYPEDEF
@@ -50,6 +57,7 @@ typedef struct TYPE {
 typedef struct PARAM {
 	char *name;		//Parameter name
 	struct TYPE *type;	//Parameter type
+	struct TYPE *btype;	//Base type
 } s_param;
 
 typedef struct SYMBOL {
