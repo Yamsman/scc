@@ -170,6 +170,7 @@ void gen_expr_array(asm_f *f, ast_n *n) {
 }
 
 void gen_expr_call(asm_f *f, ast_n *n) {
+	/*
 	symbol *fsym = n->dat.decl.sym;
 
 	//Push args to stack
@@ -193,6 +194,7 @@ void gen_expr_call(asm_f *f, ast_n *n) {
 
 	//call function
 	return;
+	*/
 }
 
 void gen_expr_immd(asm_f *f, ast_n *n) {
@@ -381,13 +383,17 @@ void gen_stmt_loop(asm_f *f, ast_n *n) {
 
 void gen_stmt_label(asm_f *f, ast_n *n) {
 	//Copy the symbol name to a new string
-	char *lsrc = n->dat.expr.sym->name; //here
-	char *str = malloc(strlen(lsrc)+1);
-	strncpy(str, lsrc, strlen(lsrc));
+	char *lsrc = n->dat.stmt.lbl; //here
 
 	//If the label isn't already in the map, store it
-	char *lbl = map_get(&f->labels, str);
+	char *lbl = map_get(&f->labels, lsrc);
 	if (lbl == NULL) {
+		int len = strlen(lsrc);
+		char *str = malloc(len+1);
+		strncpy(str, lsrc, len);
+		str[len] = '\0';
+
+		//Store the copy
 		map_insert(&f->labels, str, str);
 		lbl = str;
 	}
@@ -398,9 +404,8 @@ void gen_stmt_label(asm_f *f, ast_n *n) {
 
 void gen_stmt_goto(asm_f *f, ast_n *n) {
 	//Verify label exists in function scope
-	n->dat.stmt.lbl;
 	symbol *fsym = f->fsym;
-	symbol *lbl = NULL;
+	char *lbl = NULL;
 	if ((lbl = map_get(&fsym->labels, n->dat.stmt.lbl)) == NULL) {
 		c_error(NULL, "Label '%s' used but not defined\n",
 			n->dat.stmt.lbl);
@@ -408,7 +413,7 @@ void gen_stmt_goto(asm_f *f, ast_n *n) {
 	}
 
 	asmf_add_inst(f, mk_inst(INST_JMP, 1,
-		mk_oprd_label(lbl->name)
+		mk_oprd_label(lbl)
 	));
 	return;
 }

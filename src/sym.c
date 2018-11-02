@@ -80,24 +80,21 @@ symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 	return s;
 }
 
-symbol *symtable_def_label(symtable *stb, char *name) {
+void symtable_def_label(symtable *stb, char *name) {
 	if (stb->func == NULL) {
 		printf("ERROR: Label '%s' declared outside of function\n", name);
-		return NULL;
+		return;
 	}
 	
 	//Check for duplicates
 	symbol *dup = map_get(&stb->func->labels, name);
 	if (dup != NULL) {
 		printf("ERROR: Label '%s' is already declared\n", name);
-		return NULL;
+		return;
 	}
 
-	symbol *s = malloc(sizeof(struct SYMBOL));
-	s->name = name;
-	map_insert(&stb->func->labels, name, s);
-
-	return s;
+	map_insert(&stb->func->labels, name, name);
+	return;
 }
 
 
@@ -146,7 +143,7 @@ void sym_del(symbol *s) {
 
 	/*
 	 * s->fbody is part of the AST, so it will be freed elsewhere.
-	 * s->labels only contains dummy values, so closing the map is enough.
+	 * s->labels also contains strings owned by the AST.
 	 */
 	for (int i=0; i<s->lvars.len; i++) {
 		if (s->lvars.table[i] != NULL)

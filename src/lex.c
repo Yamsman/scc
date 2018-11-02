@@ -315,7 +315,8 @@ void lex_next(lexer *lx, int m_exp) {
 	//Skip whitespace
 	//Count the beginning of a file as a newline
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
-reset:	while (isspace(*tgt->pos)) {
+reset:	loc = &tgt->loc;
+	while (isspace(*tgt->pos)) {
 		if (*tgt->pos == '\n') { 
 			nline = 1;
 			loc->col = 0;

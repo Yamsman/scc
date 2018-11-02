@@ -70,10 +70,17 @@ void ppd_define(lexer *lx) {
 		buf = malloc(len+1);
 		memcpy(buf, start, len);
 		buf[len] = '\0';
-		for (int i=0; i<len; i++) {
+
+		//Check for ## on edges of macro
+		if (len >= 2) {
 			if (buf[0] == '#' && buf[1] == '#' ||
-			    buf[len-2] == '#' && buf[len-1] == '#')
-				c_error(loc, "'##' at beginning or end of macro");
+			    buf[len-2] == '#' && buf[len-1] == '#') {
+				c_error(loc, "'##' at beginning or end of macro\n");
+				lx->tgt->pos = end;
+				free(mname.dat.sval);
+				free(buf);
+				return;
+			}
 		}
 	}
 

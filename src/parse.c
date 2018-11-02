@@ -1183,7 +1183,8 @@ ast_n *parse_stmt_label(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT:
 			node = astn_new(STMT, STMT_LABEL);
-			node->dat.expr.sym = symtable_def_label(&lx->stb, t.dat.sval);
+			symtable_def_label(&lx->stb, t.dat.sval);
+			node->dat.stmt.lbl = t.dat.sval;
 			lex_adv(lx);
 			break;
 		case TOK_KW_CASE:
