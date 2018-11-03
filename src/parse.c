@@ -927,6 +927,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			lex_adv(lx); //expect ')'
 			return node;
 	}
+	return NULL;
 }
 
 /*
@@ -976,6 +977,27 @@ ast_n *parse_stmt(lexer *lx) {
 			break;
 	}
 	return node;
+}
+
+//Parses a parentheses-enclosed statement used in if statments, while loops, etc
+ast_n *parse_condition(lexer *lx, char *of) {
+	if (lex_peek(lx).type == TOK_LPR) {
+		lex_adv(lx);
+	} else {
+		c_error(NULL, "Missing '(' before condition body\n");
+	}
+
+	ast_n *cond = parse_expr(lx);
+	if (cond == NULL)
+		c_error(NULL, "Expected expression in %s condition\n", of);
+
+	if (lex_peek(lx).type == TOK_RPR) {
+		lex_adv(lx);
+	} else {
+		c_error(NULL, "Missing '(' after condition body\n");
+	}
+
+	return cond;
 }
 
 ast_n *parse_stmt_cmpd(lexer *lx) {
@@ -1046,20 +1068,7 @@ ast_n *parse_stmt_selection(lexer *lx) {
 		node = astn_new(STMT, STMT_IF);
 		lex_adv(lx);
 
-		if (lex_peek(lx).type == TOK_LPR) {
-			lex_adv(lx);
-		} else {
-			//missing ')'
-		}
-
-		node->dat.stmt.expr = parse_expr(lx);
-
-		if (lex_peek(lx).type == TOK_RPR) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
+		node->dat.stmt.expr = parse_condition(lx, "if statement");
 		node->dat.stmt.body = parse_stmt(lx);
 		if (lex_peek(lx).type == TOK_KW_ELSE) {
 			lex_adv(lx);
@@ -1069,111 +1078,101 @@ ast_n *parse_stmt_selection(lexer *lx) {
 		node = astn_new(STMT, STMT_SWITCH);
 		lex_adv(lx);
 
-		if (lex_peek(lx).type == TOK_LPR) {
-			lex_adv(lx);
-		} else {
-			//missing ')'
-		}
-
-		node->dat.stmt.expr = parse_expr(lx);
-
-		if (lex_peek(lx).type == TOK_RPR) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
+		node->dat.stmt.expr = parse_condition(lx, "switch statement");
 		node->dat.stmt.body = parse_stmt(lx);
 	}
 
 	return node;
 }
 
-ast_n *parse_stmt_iteration(lexer *lx) {
-	ast_n *node;
-	if (lex_peek(lx).type == TOK_KW_WHILE) {
-		node = astn_new(STMT, STMT_WHILE);
+ast_n *parse_stmt_while(lexer *lx) {
+	ast_n *node = astn_new(STMT, STMT_WHILE);
+	node->dat.stmt.expr = parse_condition(lx, "while loop");
+	node->dat.stmt.body = parse_stmt(lx);
+	return node;
+}
+
+ast_n *parse_stmt_for(lexer *lx) {
+	/*
+	 * A for loop will become a while loop with two optional parts
+	 */
+	ast_n *node = astn_new(STMT, STMT_WHILE);
+
+	if (lex_peek(lx).type == TOK_LPR) {
 		lex_adv(lx);
+	} else {
+		//missing '('
+	}
 
-		if (lex_peek(lx).type == TOK_LPR) {
-			lex_adv(lx);
-		} else {
-			//missing ')'
-		}
+	//Parse either a declaration or expression statement
+	ast_n *cond[3] = {0};
+	if (is_type_spec(lex_peek(lx))) {
+		cond[0] = parse_decl(lx);
+	} else { 
+		cond[0] = parse_stmt_expr(lx);
+	}
+	cond[1] = parse_stmt_expr(lx);
 
-		node->dat.stmt.expr = parse_expr(lx);
+	//Parse the optional third expression
+	if (lex_peek(lx).type != TOK_RPR)
+		cond[2] = parse_expr(lx);
 
-		if (lex_peek(lx).type == TOK_RPR) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
-		node->dat.stmt.body = parse_stmt(lx);
-	} else if (lex_peek(lx).type == TOK_KW_FOR) {
-		node = astn_new(STMT, STMT_FOR);
+	if (lex_peek(lx).type == TOK_RPR) {
 		lex_adv(lx);
+	} else {
+		//missing ')'
+	}
 
-		if (lex_peek(lx).type == TOK_LPR) {
-			lex_adv(lx);
-		} else {
-			//missing ')'
-		}
+	//Parse the body
+	node->dat.stmt.body = parse_stmt(lx);
 
-		//Parse either a declaration or expression statement
-		ast_n *cond[3] = {0};
-		if (is_type_spec(lex_peek(lx))) {
-			cond[0] = parse_decl(lx);
-		} else { 
-			cond[0] = parse_stmt_expr(lx);
-		}
-		cond[1] = parse_stmt_expr(lx);
+	//If the last item isn't blank, join it and the loop body in a block
+	if (cond[2] != NULL) {
+		ast_n *wrap = astn_new(STMT, STMT_CMPD);
+		wrap->next = node;
+		node->next = astn_new(STMT, STMT_EXPR);
+		node->next->dat.stmt.expr = cond[3];
+	}
 
-		//Parse the optional third expression
-		if (lex_peek(lx).type != TOK_RPR)
-			cond[2] = parse_expr(lx);
-
-		if (lex_peek(lx).type == TOK_RPR) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
-		node->dat.stmt.body = parse_stmt(lx);
-	} else if (lex_peek(lx).type == TOK_KW_DO) {
-		node = astn_new(STMT, STMT_DO_WHILE);
-		lex_adv(lx);
-
-		node->dat.stmt.body = parse_stmt(lx);
-
-		//Parse condition
-		if (lex_peek(lx).type != TOK_KW_WHILE) {
-			//expected 'while' ..
-		}
-		lex_adv(lx);
-
-		if (lex_peek(lx).type == TOK_LPR) {
-			lex_adv(lx);
-		} else {
-			//missing ')'
-		}
-
-		node->dat.stmt.expr = parse_expr(lx);
-
-		if (lex_peek(lx).type == TOK_RPR) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
-		if (lex_peek(lx).type == TOK_SEM) {
-			lex_adv(lx);
-		} else {
-			//missing '('
-		}
-
+	//If the first item isn't blank, wrap the item and the loop in a block
+	if (cond[0] != NULL) {
+		ast_n *wrap = astn_new(STMT, STMT_CMPD);
+		wrap->next = cond[0];
+		cond[0]->next = node;
+		return wrap;
 	}
 	return node;
+}
+
+ast_n *parse_stmt_do_while(lexer *lx) {
+	ast_n *node = astn_new(STMT, STMT_DO_WHILE);
+
+	//Parse body
+	node->dat.stmt.body = parse_stmt(lx);
+
+	//Parse condition
+	if (lex_peek(lx).type == TOK_KW_WHILE) {
+		lex_adv(lx);
+	} else {
+		c_error(NULL, "Expected 'while' after do-while body\n");
+	}
+
+	node->dat.stmt.expr = parse_condition(lx, "do-while loop");
+
+	if (lex_peek(lx).type == TOK_SEM) {
+		lex_adv(lx);
+	} else {
+		c_error(NULL, "Missing ';' after do-while condition\n");
+	}
+	return node;
+}
+
+ast_n *parse_stmt_iteration(lexer *lx) {
+	switch (lex_peek(lx).type) {
+		case TOK_KW_WHILE: lex_adv(lx); return parse_stmt_while(lx);
+		case TOK_KW_FOR:   lex_adv(lx); return parse_stmt_for(lx);
+		case TOK_KW_DO:	   lex_adv(lx); return parse_stmt_do_while(lx);
+	}
 }
 
 ast_n *parse_stmt_label(lexer *lx) {

@@ -327,19 +327,19 @@ void gen_stmt_loop(asm_f *f, ast_n *n) {
 
 	//Condition for while and for loops
 	if (n->dat.stmt.kind == STMT_WHILE) {
-		gen_expr(f, n->dat.stmt.expr);
-	} else if (n->dat.stmt.kind == STMT_FOR) {
-		//...
-	}
-	if (n->dat.stmt.kind != STMT_DO_WHILE) {
 		lbl_end = gen_numlabel(f);
-		asmf_add_inst(f, mk_inst(INST_TEST, 2,
-			mk_oprd(OPRD_REG, RAX),
-			mk_oprd(OPRD_REG, RAX)
-		));
-		asmf_add_inst(f, mk_inst(INST_JZ, 1,
-			mk_oprd_label(lbl_end)
-		));
+		
+		//Does not apply for converted for loops with no condition
+		if (n->dat.stmt.expr != NULL) {
+			gen_expr(f, n->dat.stmt.expr);
+			asmf_add_inst(f, mk_inst(INST_TEST, 2,
+				mk_oprd(OPRD_REG, RAX),
+				mk_oprd(OPRD_REG, RAX)
+			));
+			asmf_add_inst(f, mk_inst(INST_JZ, 1,
+				mk_oprd_label(lbl_end)
+			));
+		}
 	}
 	
 	//Generate loop body by hand to account for break/continue
