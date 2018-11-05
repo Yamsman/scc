@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "sym.h"
+#include "err.h"
 #include "util/map.h"
 #include "util/vector.h"
 
@@ -49,19 +50,19 @@ void symtable_scope_leave(symtable *stb) {
 	return;
 }
 
-symbol *symtable_def(symtable *stb, char *name, s_type *type) {
+symbol *symtable_def(symtable *stb, char *name, s_type *type, s_pos *loc) {
 	//Check for conflicts in current scope
 	symbol *dup = map_get(&stb->s_cur->table, name);
 	if (dup != NULL) {
 		if (!type_compare(dup->type, type)) {
-			printf("ERROR: Conflicting types for '%s'\n", name);
+			c_error(loc, "Conflicting types for '%s'\n", name);
 			return NULL;
 		}
 
 		if (stb->s_cur == stb->s_global) {
 			return dup;
 		} else {
-			printf("ERROR: Redeclaration of '%s'\n", name);
+			c_error(loc, "Redeclaration of '%s'\n", name);
 			return NULL;
 		}
 	}
@@ -80,16 +81,16 @@ symbol *symtable_def(symtable *stb, char *name, s_type *type) {
 	return s;
 }
 
-void symtable_def_label(symtable *stb, char *name) {
+void symtable_def_label(symtable *stb, char *name, s_pos *loc) {
 	if (stb->func == NULL) {
-		printf("ERROR: Label '%s' declared outside of function\n", name);
+		c_error(loc, "Label '%s' declared outside of function\n", name);
 		return;
 	}
 	
 	//Check for duplicates
 	symbol *dup = map_get(&stb->func->labels, name);
 	if (dup != NULL) {
-		printf("ERROR: Label '%s' is already declared\n", name);
+		c_error(loc, "Label '%s' is already declared\n", name);
 		return;
 	}
 

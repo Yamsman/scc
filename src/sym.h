@@ -1,6 +1,7 @@
 #ifndef SYM_TABLE_H
 #define SYM_TABLE_H
 
+#include "err.h"
 #include "util/map.h"
 #include "util/vector.h"
 
@@ -87,8 +88,8 @@ void symtable_init(struct SYMTABLE *stb);
 void symtable_close(struct SYMTABLE *stb);
 void symtable_scope_enter(struct SYMTABLE *stb);
 void symtable_scope_leave(struct SYMTABLE *stb);
-struct SYMBOL *symtable_def(struct SYMTABLE *stb, char *name, struct TYPE *type);
-void symtable_def_label(symtable *stb, char *name);
+struct SYMBOL *symtable_def(struct SYMTABLE *stb, char *name, struct TYPE *type, struct SRC_POS *loc);
+void symtable_def_label(symtable *stb, char *name, struct SRC_POS *loc);
 void symtable_undef(symtable *stb, char *name);
 struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 

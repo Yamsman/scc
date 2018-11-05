@@ -3,6 +3,7 @@
 #include <string.h>
 #include "sym.h"
 #include "ast.h"
+#include "err.h"
 #include "lex.h"
 #include "parse.h"
 
@@ -13,7 +14,7 @@
 
 ast_n *parse_decl(lexer *lx);
 s_type *parse_decl_spec(lexer *lx);
-s_type *parse_decltr(lexer *lx, s_type *type, char **vname);
+s_type *parse_decltr(lexer *lx, s_type *type, token *vname);
 ast_n *parse_decl_body(lexer *lx, s_type *type);
 
 s_param *parse_fparam(lexer *lx);
@@ -66,7 +67,7 @@ ast_n *parse(lexer *lx) {
 				case TOK_SEM: fdef = 0;   break; 
 				case TOK_LBR: fdef = par; break;
 				case TOK_END:
-					c_error(NULL, "Premature end of input\n");
+					c_error(&lx->tgt->loc, "Premature end of input\n");
 					return NULL;
 			}
 			token_n *tn = make_tok_node(t);
@@ -90,6 +91,7 @@ ast_n *parse(lexer *lx) {
 			case 0: node = parse_decl(lx); break;
 			case 1: node = parse_fdef(lx); break;
 		}
+		if (node == NULL) continue;
 		node->next = NULL;
 
 		//Add declaration/function definition to list
@@ -173,7 +175,7 @@ s_type *parse_decl_spec(lexer *lx) {
 			case TOK_KW_FLOAT:
 			case TOK_KW_DOUBLE:
 				if (type->kind != TYPE_UNDEF) {
-					printf("ERROR: Multiple data types in declaration");
+					c_error(&t.loc, "Multiple data types in declaration\n");
 				}
 				type->kind = (t.type - TOK_KW_VOID) + TYPE_VOID;
 				break;
@@ -182,7 +184,7 @@ s_type *parse_decl_spec(lexer *lx) {
 			case TOK_KW_AUTO:
 			case TOK_KW_REGISTER:
 				if (type->s_class != CLASS_UNDEF) {
-					printf("ERROR: Multiple storage classes in declaration");
+					c_error(&t.loc, "Multiple storage classes in declaration\n");
 				}
 				type->s_class = (t.type - TOK_KW_EXTERN) + CLASS_EXTERN;
 				break;
@@ -253,7 +255,7 @@ s_type *parse_decltr_back(lexer *lx, s_type *base_type) {
 	return type;
 }
 
-s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
+s_type *parse_decltr(lexer *lx, s_type *type, token *vname) {
 	//Parse pointer types if applicable
 	//s_type *ptr_type = parse_decltr_ptr(type);
 	//if (ptr_type != type)
@@ -292,7 +294,7 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
 	token t = lex_peek(lx);
 	if (t.type == TOK_IDENT) {
 		lex_adv(lx);
-		*vname = t.dat.sval;
+		*vname = t;
 	}
 	return parse_decltr_back(lx, type);
 }
@@ -300,19 +302,19 @@ s_type *parse_decltr(lexer *lx, s_type *type, char **vname) {
 //TODO: split into parse_decl_decltr and parse_decl_init
 ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	//Parse declarator
-	char *vname = NULL;
+	token vname = {0}; 
 	s_type *vtype = parse_decltr(lx, type_clone(base_type), &vname);
 
 	//Create a new symbol
 	//parse_decltr may not set vname in order to implement parameters
-	if (vname == NULL) {
-		printf("ERROR: Expected variable name\n");
-		return NULL;
+	if (vname.dat.sval == NULL) {
+		c_error(&vname.loc, "Missing variable name in declaration\n");
 	}
 
-	symbol *s = symtable_def(&lx->stb, vname, vtype);
+	symbol *s = symtable_def(&lx->stb, vname.dat.sval, vtype, &vname.loc);
 	if (!s) { //If duplicate exists
-		//error handling?
+		free(vname.dat.sval);
+		type_del(vtype);
 	}
 
 	ast_n *node = astn_new(DECL, DECL_STD);
@@ -330,14 +332,14 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 
 s_param *parse_fparam(lexer *lx) {
 	//Parse type
-	char *vname = NULL;
+	token vname = {0};
 	s_type *base_type = parse_decl_spec(lx);
 
 	//Parse declarator
 	s_type *type = parse_decltr(lx, base_type, &vname);
 
 	//Create parameter and return
-	return param_new(type, vname);
+	return param_new(type, vname.dat.sval);
 }
 
 vector parse_fparam_list(lexer *lx) {
@@ -369,14 +371,14 @@ ast_n *parse_fdef(lexer *lx) {
 	s_type *r_type = parse_decl_spec(lx);
 
 	//Get declarator
-	char *f_name;
+	token f_name = {0};
 	s_type *f_type = parse_decltr(lx, r_type, &f_name);
 	f_type->ret = r_type;
 
-	//Create symbol
-	symbol *s = symtable_def(&lx->stb, f_name, f_type);
+	//Create symbol (or reuse unless there is a redefinition conflict)
+	symbol *s = symtable_def(&lx->stb, f_name.dat.sval, f_type, &f_name.loc);
 	if (s->fbody != NULL) {
-		printf("ERROR: Redefinition of '%s'\n", f_name);
+		c_error(NULL, "Redefinition of '%s'\n", f_name.dat.sval);
 	}
 
 	//Enter function scope
@@ -384,7 +386,7 @@ ast_n *parse_fdef(lexer *lx) {
 	lx->stb.func = s;
 	for (int i=0; i<f_type->param.len; i++) {
 		s_param *p = f_type->param.table[i];
-		symtable_def(&lx->stb, p->name, p->type);
+		symtable_def(&lx->stb, p->name, p->type, NULL);
 	}
 
 	//Create node and parse body
@@ -408,34 +410,34 @@ vector parse_sdef_body(lexer *lx) {
 	vector_init(&memb, VECTOR_EMPTY);
 	while (lex_peek(lx).type != TOK_RBR) {
 		if (lex_peek(lx).type == TOK_END) {
-			printf("ERROR: Expected '}' before end of file\n");
+			c_error(NULL, "Expected '}' before end of file\n");
 		}
 
 		//Get type
 		//TODO: no type classes when parsing for specifier
-		char *mname = NULL;
+		token mname = {0};
 		s_type *base_type = parse_decl_spec(lx);
 
 		//Parse declarator
 		//TODO: bitfields
 		s_type *mtype = parse_decltr(lx, type_clone(base_type), &mname);
-		if (mname != NULL) {
+		if (mname.dat.sval != NULL) {
 			//Create new member
-			s_param *m = param_new(mtype, mname);
+			s_param *m = param_new(mtype, mname.dat.sval);
 			vector_add(&memb, m);
 		} else {
-			printf("ERROR: Declaration declares nothing\n");
+			c_error(NULL, "Declaration declares nothing\n");
 		}
 
 		//Expect ';'
 		if (lex_peek(lx).type != TOK_SEM) {
-			printf("ERROR: Expected ';' before ...\n");
+			c_error(NULL, "Expected ';' before ...\n");
 		}
 		lex_adv(lx);
 	}
 
 	if (lex_peek(lx).type != TOK_RBR) {
-		printf("ERROR: Expected '}' before ...\n");
+		c_error(NULL, "Expected '}' before ...\n");
 	}
 	lex_adv(lx);
 
@@ -460,10 +462,13 @@ s_type *parse_sdef(lexer *lx) {
 
 	//Get identifier and member list
 	char *tname = NULL;
+	s_pos nloc, aloc;
 	if (lex_peek(lx).type == TOK_IDENT) {
 		tname = lex_peek(lx).dat.sval;
+		nloc = lex_peek(lx).loc;
 		lex_adv(lx);
 	}
+	aloc = lex_peek(lx).loc;
 	if (lex_peek(lx).type == TOK_LBR)
 		type->param = parse_sdef_body(lx);
 
@@ -476,7 +481,7 @@ s_type *parse_sdef(lexer *lx) {
 	 */
 	if (tname == NULL) {
 		if (type->param.len == VECTOR_EMPTY) {
-			printf("ERROR: Expected '{' or identifier before ...\n");
+			c_error(&aloc, "Expected '{' or identifier before ...\n");
 			return NULL;
 		} 
 	} else {
@@ -484,11 +489,11 @@ s_type *parse_sdef(lexer *lx) {
 		if (type->param.len == VECTOR_EMPTY) {
 			s = symtable_search(&lx->stb, tname);
 			if (s == NULL) {
-				printf("ERROR: Undefined struct '%s'\n", tname);
+				c_error(&nloc, "Undefined struct '%s'\n", tname);
 				return NULL;
 			}
 		} else {
-			s = symtable_def(&lx->stb, tname, type);
+			s = symtable_def(&lx->stb, tname, type, &nloc);
 		}
 	}
 
@@ -908,7 +913,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			if (s != NULL) {
 				node->dat.expr.sym = s;
 			} else {
-				printf("ERROR: Undeclared variable \"%s\"\n", t.dat.sval);
+				c_error(NULL, "Undeclared variable \"%s\"\n", t.dat.sval);
 			}
 			free(t.dat.sval);
 
@@ -1012,7 +1017,7 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 		//Premature end of file
 		token t = lex_peek(lx);
 		if (t.type == TOK_END) {
-			printf("Error: Expected '}' before end of input!\n");
+			c_error(NULL, "Expected '}' before end of input!\n");
 			break;
 		}
 
@@ -1182,7 +1187,7 @@ ast_n *parse_stmt_label(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT:
 			node = astn_new(STMT, STMT_LABEL);
-			symtable_def_label(&lx->stb, t.dat.sval);
+			symtable_def_label(&lx->stb, t.dat.sval, &t.loc);
 			node->dat.stmt.lbl = t.dat.sval;
 			lex_adv(lx);
 			break;

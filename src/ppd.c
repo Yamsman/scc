@@ -3,6 +3,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "sym.h"
+#include "err.h"
 #include "lex.h"
 #include "ppd.h"
 #include "util/map.h"
@@ -85,7 +86,7 @@ void ppd_define(lexer *lx) {
 	}
 
 	//Add to symtable
-	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, type_new(TYPE_MACRO));
+	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, type_new(TYPE_MACRO), &mname.loc);
 	sym->mac_exp = buf;
 	lx->tgt->pos = end;
 	return;
