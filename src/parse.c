@@ -378,7 +378,7 @@ ast_n *parse_fdef(lexer *lx) {
 	//Create symbol (or reuse unless there is a redefinition conflict)
 	symbol *s = symtable_def(&lx->stb, f_name.dat.sval, f_type, &f_name.loc);
 	if (s->fbody != NULL) {
-		c_error(NULL, "Redefinition of '%s'\n", f_name.dat.sval);
+		c_error(&f_name.loc, "Redefinition of '%s'\n", f_name.dat.sval);
 	}
 
 	//Enter function scope
@@ -410,7 +410,7 @@ vector parse_sdef_body(lexer *lx) {
 	vector_init(&memb, VECTOR_EMPTY);
 	while (lex_peek(lx).type != TOK_RBR) {
 		if (lex_peek(lx).type == TOK_END) {
-			c_error(NULL, "Expected '}' before end of file\n");
+			c_error(&lx->tgt->loc, "Expected '}' before end of file\n");
 		}
 
 		//Get type
@@ -426,18 +426,18 @@ vector parse_sdef_body(lexer *lx) {
 			s_param *m = param_new(mtype, mname.dat.sval);
 			vector_add(&memb, m);
 		} else {
-			c_error(NULL, "Declaration declares nothing\n");
+			c_error(&mname.loc, "Declaration declares nothing\n");
 		}
 
 		//Expect ';'
 		if (lex_peek(lx).type != TOK_SEM) {
-			c_error(NULL, "Expected ';' before ...\n");
+			c_error(&lx->tgt->loc, "Expected ';' before ...\n");
 		}
 		lex_adv(lx);
 	}
 
 	if (lex_peek(lx).type != TOK_RBR) {
-		c_error(NULL, "Expected '}' before ...\n");
+		c_error(&lx->tgt->loc, "Expected '}' before ...\n");
 	}
 	lex_adv(lx);
 
@@ -913,7 +913,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			if (s != NULL) {
 				node->dat.expr.sym = s;
 			} else {
-				c_error(NULL, "Undeclared variable \"%s\"\n", t.dat.sval);
+				c_error(&t.loc, "Undeclared variable \"%s\"\n", t.dat.sval);
 			}
 			free(t.dat.sval);
 
@@ -984,22 +984,22 @@ ast_n *parse_stmt(lexer *lx) {
 	return node;
 }
 
-//Parses a parentheses-enclosed statement used in if statments, while loops, etc
+//Parses a parentheses-enclosed expression used in if statments, while loops, etc
 ast_n *parse_condition(lexer *lx, char *of) {
 	if (lex_peek(lx).type == TOK_LPR) {
 		lex_adv(lx);
 	} else {
-		c_error(NULL, "Missing '(' before condition body\n");
+		c_error(&lx->tgt->loc, "Missing '(' before condition body\n");
 	}
 
 	ast_n *cond = parse_expr(lx);
 	if (cond == NULL)
-		c_error(NULL, "Expected expression in %s condition\n", of);
+		c_error(&lx->tgt->loc, "Expected expression in %s condition\n", of);
 
 	if (lex_peek(lx).type == TOK_RPR) {
 		lex_adv(lx);
 	} else {
-		c_error(NULL, "Missing '(' after condition body\n");
+		c_error(&lx->tgt->loc, "Missing '(' after condition body\n");
 	}
 
 	return cond;
@@ -1017,7 +1017,7 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 		//Premature end of file
 		token t = lex_peek(lx);
 		if (t.type == TOK_END) {
-			c_error(NULL, "Expected '}' before end of input!\n");
+			c_error(&t.loc, "Expected '}' before end of input!\n");
 			break;
 		}
 
@@ -1159,7 +1159,7 @@ ast_n *parse_stmt_do_while(lexer *lx) {
 	if (lex_peek(lx).type == TOK_KW_WHILE) {
 		lex_adv(lx);
 	} else {
-		c_error(NULL, "Expected 'while' after do-while body\n");
+		c_error(&lx->tgt->loc, "Expected 'while' after do-while body\n");
 	}
 
 	node->dat.stmt.expr = parse_condition(lx, "do-while loop");
@@ -1167,7 +1167,7 @@ ast_n *parse_stmt_do_while(lexer *lx) {
 	if (lex_peek(lx).type == TOK_SEM) {
 		lex_adv(lx);
 	} else {
-		c_error(NULL, "Missing ';' after do-while condition\n");
+		c_error(&lx->tgt->loc, "Missing ';' after do-while condition\n");
 	}
 	return node;
 }

@@ -93,7 +93,7 @@ void ppd_define(lexer *lx) {
 }
 
 void ppd_error(lexer *lx) {
-	//c_error(lx->tgt->loc, ///
+	s_pos *loc = &lx->tgt->loc;
 }
 
 void ppd_if(lexer *lx) {
