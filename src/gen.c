@@ -29,8 +29,8 @@ void gen_decl(asm_f *f, ast_n *n) {
 }
 
 void gen_expr_logic_andor(asm_f *f, ast_n *n) {
-	//Logical and exppass_valsions can short circuit if the LHS is 0,
-	//and logical or exppass_valsions can if the LHS is 1
+	//Logical-and expressions can short circuit if the LHS is 0,
+	//and logical-or expressions can if the LHS is 1
 	int jmp_i = -1;
 	int pass_val = -1;
 	char *lbl_sc = gen_numlabel(f);

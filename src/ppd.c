@@ -8,7 +8,7 @@
 #include "ppd.h"
 #include "util/map.h"
 
-void ppd_defparams(lexer *lx) {
+void ppd_defparams(lexer *lx, s_type *mtype) {
 	token *t = &lx->ahead;
 	s_pos *loc = &lx->tgt->loc;
 	lx->tgt->pos++;
@@ -19,7 +19,6 @@ void ppd_defparams(lexer *lx) {
 	}
 
 	//Read parameters
-	//TODO: Proper error handling
 	while (t->type != TOK_RPR) {
 		if (t->nline) {
 			c_error(loc, "Unexpected end of line in macro parameter list\n");
@@ -27,11 +26,19 @@ void ppd_defparams(lexer *lx) {
 		}
 
 		//Read identifier
-		lex_next(lx, 0);
-		if (t->type == TOK_IDENT) {
-		} else {
-			c_error(loc, "Expected identifier\n");
+		if (t->type != TOK_IDENT) {
+			c_error(loc, "Missing identifier in macro parameter list\n");
 			break;
+		}
+		vector_add(&mtype->param, param_new(type_new(TYPE_MACRO), t->dat.sval));
+		lex_next(lx, 0);
+
+		//Read comma
+		if (t->type != TOK_CMM && t->type != TOK_RPR) {
+			c_error(loc, "Missing comma in macro parameter list\n");
+			break;
+		} else if (t->type == TOK_CMM) {
+			lex_next(lx, 0);
 		}
 	}
 }
@@ -45,8 +52,9 @@ void ppd_define(lexer *lx) {
 		c_error(loc, "Invalid macro name\n");
 
 	//Check for and read macro parameter list
-	//if (*lx->tgt->pos == '(')
-	//	ppd_defparams(lx);
+	s_type *mtype = type_new(TYPE_MACRO);
+	if (*lx->tgt->pos == '(')
+		ppd_defparams(lx, mtype);
 
 	//Get bounds of macro body
 	char *cur = lx->tgt->pos;
@@ -86,7 +94,7 @@ void ppd_define(lexer *lx) {
 	}
 
 	//Add to symtable
-	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, type_new(TYPE_MACRO), &mname.loc);
+	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, mtype, &mname.loc);
 	sym->mac_exp = buf;
 	lx->tgt->pos = end;
 	return;

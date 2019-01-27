@@ -262,6 +262,7 @@ void param_del(s_param *p) {
 	//Symbols created when parsing a function definition take "ownership"
 	//of the name and type pointers; hence, they are not freed here
 	free(p);
+	return;
 }
 
 void memb_del(s_param *m) {

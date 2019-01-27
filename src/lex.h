@@ -123,6 +123,7 @@ void lexer_tgt_close(struct LEXER *lx);
 
 //Used internally by lexer/preprocessor
 void lex_next(struct LEXER *lx, int m_exp);
+int lex_expand_macro(struct LEXER *lx, struct TOKEN t);
 
 struct TOKEN lex_peek(struct LEXER *lx);
 void lex_adv(struct LEXER *lx);

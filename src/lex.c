@@ -298,6 +298,8 @@ s_err:	c_error(&suffix_loc, "Invalid suffix on constant\n");
 	goto s_end;
 }
 
+//Processes the next token
+//If m_exp is nonzero, macros will be expanded
 void lex_next(lexer *lx, int m_exp) {
 	token t = {-1, -1, lx->tgt->loc, 0, NULL};
 	lex_target *tgt = lx->tgt;
@@ -315,7 +317,8 @@ void lex_next(lexer *lx, int m_exp) {
 	//Skip whitespace
 	//Count the beginning of a file as a newline
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
-reset:	loc = &tgt->loc;
+reset:	tgt = lx->tgt;
+	loc = &tgt->loc;
 	while (isspace(*tgt->pos)) {
 		if (*tgt->pos == '\n') { 
 			nline = 1;
@@ -513,6 +516,7 @@ reset:	loc = &tgt->loc;
 		case 'k': case 'l': case 'm': case 'n': case 'o':
 		case 'p': case 'q': case 'r': case 's': case 't':
 		case 'u': case 'v': case 'w': case 'x': case 'y':
+		case 'z':
 		case 'A': case 'B': case 'C': case 'D': case 'E':
 		case 'F': case 'G': case 'H': case 'I': case 'J':
 		case 'K': case 'L': case 'M': case 'N': case 'O':
@@ -531,27 +535,8 @@ reset:	loc = &tgt->loc;
 				t.type = kw_id;
 
 			//Check for macro expansion
-			symbol *s = symtable_search(&lx->stb, t.dat.sval);
-			if (m_exp && s != NULL && s->mac_exp != NULL) {
-				//Check target stack to prevent reexpansion
-				int expanded = 0;
-				for (lex_target *i = tgt; i != NULL; i = i->prev) {
-					if (i->type == TGT_MACRO && !strcmp(i->name, t.dat.sval)) {
-						expanded = 1;
-						break;
-					}
-				}
-				if (expanded) break;
-
-				//Expand the macro
-				tgt->pos = cur;
-				lexer_tgt_open(lx, t.dat.sval, TGT_MACRO, s->mac_exp);
-				tgt = lx->tgt;
-
-				free(t.dat.sval);
-				t.dat.sval = NULL;
+			if (m_exp && !lex_expand_macro(lx, t))
 				goto reset;
-			}
 
 			//If the token is an identifier, free the string
 			if (kw_id != 0) {
@@ -586,6 +571,43 @@ end:	loc->col += (cur - begin);
 	lx->ahead = t;
 	
 	return;
+}
+
+//Skips whitespace
+void lex_wspace(lexer *lx) {
+
+}
+
+//Sets the lexer to expand a macro
+//Returns zero if a macro was identified and expanded
+int lex_expand_macro(lexer *lx, token t) {
+	lex_target *tgt = lx->tgt;
+	char *cur = tgt->pos;
+
+	//Check for macro expansion
+	symbol *s = symtable_search(&lx->stb, t.dat.sval);
+	if (s != NULL && s->mac_exp != NULL) {
+		//Check target stack to prevent reexpansion
+		int expanded = 0;
+		for (lex_target *i = tgt; i != NULL; i = i->prev) {
+			if (i->type == TGT_MACRO && !strcmp(i->name, t.dat.sval)) {
+				expanded = 1;
+				break;
+			}
+		}
+		if (expanded) return -1;
+
+		//Expand the macro
+		tgt->pos = cur;
+		lexer_tgt_open(lx, t.dat.sval, TGT_MACRO, s->mac_exp);
+		tgt = lx->tgt;
+
+		//Free the identifier
+		free(t.dat.sval);
+		t.dat.sval = NULL;
+		return 0;
+	}
+	return -1;
 }
 
 //Perform preprocessing
