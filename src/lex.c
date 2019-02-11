@@ -90,7 +90,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 		n_tgt->loc = lx->tgt->loc;
 	} else {
 		n_tgt->loc.line = 1;
-		n_tgt->loc.col = 0;
+		n_tgt->loc.col = 1;
 		n_tgt->loc.fname = name;
 	}
 
@@ -316,18 +316,11 @@ void lex_next(lexer *lx, int m_exp) {
 
 	//Skip whitespace
 	//Count the beginning of a file as a newline
+	//When the lexer is reset (when a new context is created) it begins from here
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
 reset:	tgt = lx->tgt;
 	loc = &tgt->loc;
-	while (isspace(*tgt->pos)) {
-		if (*tgt->pos == '\n') { 
-			nline = 1;
-			loc->col = 0;
-			loc->line++;
-		}
-		tgt->pos++;
-		loc->col++;
-	}
+	nline |= lex_wspace(lx);
 	t.nline = nline;
 	t.loc = *loc;
 
@@ -574,8 +567,21 @@ end:	loc->col += (cur - begin);
 }
 
 //Skips whitespace
-void lex_wspace(lexer *lx) {
-
+//Returns 1 if a newline is skipped
+int lex_wspace(lexer *lx) {
+	int nline = 0;
+	lex_target *tgt = lx->tgt;
+	s_pos *loc = &tgt->loc;
+	while (isspace(*tgt->pos)) {
+		if (*tgt->pos == '\n') { 
+			nline = 1;
+			loc->col = 0;
+			loc->line++;
+		}
+		tgt->pos++;
+		loc->col++;
+	}
+	return nline;
 }
 
 //Sets the lexer to expand a macro
@@ -596,9 +602,23 @@ int lex_expand_macro(lexer *lx, token t) {
 			}
 		}
 		if (expanded) return -1;
+		tgt->pos = cur;
+
+		//Check for function macro arguments
+		//TODO: skip whitespace, error handling, loc updating
+		/*
+		lex_next(lx, 0);
+		if (lex_peek(lx).kind == TOK_LPR) {
+			cur = tgt->pos;
+			char *begin = cur;
+			while (*cur != ')' && *cur != ',')
+				cur++;
+
+		}
+		tgt->pos = cur;
+		*/
 
 		//Expand the macro
-		tgt->pos = cur;
 		lexer_tgt_open(lx, t.dat.sval, TGT_MACRO, s->mac_exp);
 		tgt = lx->tgt;
 

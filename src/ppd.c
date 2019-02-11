@@ -102,6 +102,24 @@ void ppd_define(lexer *lx) {
 
 void ppd_error(lexer *lx) {
 	s_pos *loc = &lx->tgt->loc;
+
+	//Read message
+	char *cur = lx->tgt->pos;
+	while (isspace(*cur) && *cur != '\n') cur++;
+	char *start = cur;
+	while (*cur != '\n') cur++;
+
+	int len = cur - start;
+	char *buf = malloc(len+1);
+	memcpy(buf, start, len);
+	buf[len] = '\0';
+
+	//Print error
+	c_error(loc, "%s\n", buf);
+	free(buf);
+
+	lx->tgt->pos = cur;
+	return;
 }
 
 void ppd_if(lexer *lx) {
