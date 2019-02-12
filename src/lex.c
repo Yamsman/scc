@@ -30,6 +30,7 @@ lexer *lexer_init(char *fname) {
 	lx->pre = NULL;
 	lx->ahead = BLANK_TOKEN;
 	vector_init(&lx->flist, VECTOR_EMPTY);
+	vector_init(&lx->conds, VECTOR_EMPTY);
 
 	if (!lex_open_file(lx, fname)) {
 		c_error(NULL, "Unable to open file '%s': ", fname);
@@ -73,6 +74,7 @@ void lexer_close(lexer *lx) {
 		free(lx->flist.table[i]);
 
 	vector_close(&lx->flist);
+	vector_close(&lx->conds);
 	symtable_close(&lx->stb);
 	free(lx);
 	return;
@@ -108,6 +110,21 @@ void lexer_tgt_close(lexer *lx) {
 	lx->tgt = tgt->prev;
 
 	free(tgt);
+	return;
+}
+
+void lexer_add_cond(lexer *lx, int pass) {
+	lex_cond *cond = malloc(sizeof(struct LEX_CONDITION));
+	cond->is_true = pass;
+	cond->was_true = 0;
+	cond->has_else = 0;
+	vector_push(&lx->conds, cond);
+	return;
+}
+
+void lexer_del_cond(lexer *lx) {
+	lex_cond *cond = vector_pop(&lx->conds);
+	free(cond);
 	return;
 }
 
@@ -635,27 +652,20 @@ int lex_expand_macro(lexer *lx, token t) {
 //Perform preprocessing
 void lex_ppd(lexer *lx) {
 	//Read directive
-	lex_next(lx, 0);
 	token ppd = lex_peek(lx);
 	switch (ppd.type) {
-		case TOK_KW_DEFINE:  ppd_define(lx);			break;
-		case TOK_KW_ERROR:   ppd_error(lx);			break;
-		case TOK_KW_IF:      ppd_if(lx);			break;
-		case TOK_KW_IFDEF:   //ppd_ifdef(lx);			break;
-		case TOK_KW_IFNDEF:  /*ppd_ifndef(lx);*/		break;
-		case TOK_KW_INCLUDE: ppd_include(lx);			break;
-		case TOK_KW_LINE:    break;
-		case TOK_KW_PRAGMA:  break;
-		case TOK_KW_UNDEF:   ppd_undef(lx);			break;
-		case TOK_KW_ELIF:
-			c_error(&ppd.loc, "#elif before #if\n");
-			break;
-		case TOK_KW_ELSE:
-			c_error(&ppd.loc, "#else before #if\n");
-			break;
-		case TOK_KW_ENDIF:   
-			c_error(&ppd.loc, "#endif before #if\n");
-			break;
+		case TOK_KW_DEFINE:	ppd_define(lx);			break;
+		case TOK_KW_ELIF:	ppd_elif(lx);			break;
+		case TOK_KW_ELSE:	ppd_else(lx);			break;
+		case TOK_KW_ENDIF:   	ppd_endif(lx);			break;
+		case TOK_KW_ERROR:	ppd_error(lx);			break;
+		case TOK_KW_IF:		ppd_if(lx);			break;
+		case TOK_KW_IFDEF:	ppd_ifdef(lx);			break;
+		case TOK_KW_IFNDEF:	ppd_ifndef(lx);			break;
+		case TOK_KW_INCLUDE:	ppd_include(lx);		break;
+		case TOK_KW_LINE:					break;
+		case TOK_KW_PRAGMA:					break;
+		case TOK_KW_UNDEF:	ppd_undef(lx);			break;
 		default:
 			c_error(&ppd.loc, "Invalid preprocessor directive\n");
 			break;
@@ -670,9 +680,60 @@ token lex_peek(lexer *lx) {
 	return lx->ahead;
 }
 
+//Helper that returns 1 if a directive is conditional-related
+int is_condppd(int type) {
+	switch (type) {
+		case TOK_KW_ELIF:
+		case TOK_KW_ELSE:
+		case TOK_KW_ENDIF:
+		case TOK_KW_IF:	
+		case TOK_KW_IFDEF:
+		case TOK_KW_IFNDEF:
+			return 1;
+	}
+	return 0;
+}
+
+/* 
+ * Skip if the current preprocessor condition is false or if the condition
+ * has already been true at least once.
+ * If another #if directive is encountered while skipping, its condition
+ * will always be marked as false, even if it would normally evaluate true.
+ */
+void lex_condskip(lexer *lx) {
+	lex_cond *cond;
+reset:	cond = vector_top(&lx->conds);
+	if (cond != NULL && (!cond->is_true || cond->was_true)) {
+		//Repeat until a conditional directive changes the state
+		while (*lx->tgt->pos != '\0') {
+			int nline = lex_wspace(lx);
+			if (nline && *lx->tgt->pos == '#') {
+				lx->tgt->pos++;
+				lx->tgt->loc.col++;
+				lex_next(lx, 0);
+
+				//Only perform conditional directives
+				token t = lex_peek(lx);
+				if (is_condppd(t.type)) {
+					lex_ppd(lx);
+					goto reset;
+				}
+			}
+			lx->tgt->pos++;
+			lx->tgt->loc.col++;
+		}
+
+		//Premature end of input
+		if (*lx->tgt->pos == '\0')
+			c_error(&lx->tgt->loc, "Expected #endif before end of input\n");
+	}
+}
+
 void lex_adv(lexer *lx) {
-reset:	lex_next(lx, 1);
+reset:	lex_condskip(lx);
+	lex_next(lx, 1);
 	if (lx->ahead.type == TOK_SNS) {
+		lex_next(lx, 0);
 		lex_ppd(lx);
 		goto reset;
 	}

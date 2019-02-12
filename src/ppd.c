@@ -7,6 +7,7 @@
 #include "lex.h"
 #include "eval.h"
 #include "ppd.h"
+#include "util/vector.h"
 #include "util/map.h"
 
 void ppd_defparams(lexer *lx, s_type *mtype) {
@@ -126,19 +127,6 @@ void ppd_error(lexer *lx) {
 	return;
 }
 
-void ppd_if(lexer *lx) {
-	int res = eval_constexpr(lx);
-	//printf("#if result: %i\n", res);
-}
-
-void ppd_ifdef(lexer *lx) {
-	
-}
-
-void ppd_ifndef(lexer *lx) {
-
-}
-
 void ppd_include(lexer *lx) {
 	char *cur = lx->tgt->pos;
 	s_pos *loc = &lx->tgt->loc;
@@ -209,5 +197,79 @@ void ppd_undef(lexer *lx) {
 		return;
 	map_remove(&lx->stb.s_global->table, mname.dat.sval);
 
+	return;
+}
+
+/*
+ * Conditional directives
+ */
+
+void ppd_if(lexer *lx) {
+	int res = (eval_constexpr(lx)) ? 1 : 0;
+	lexer_add_cond(lx, res);
+	return;
+}
+
+void ppd_ifdef(lexer *lx) {
+	lex_next(lx, 0);
+	token t = lex_peek(lx);
+	if (t.type != TOK_IDENT)
+		c_error(&t.loc, "Expected identifier after #ifdef\n");
+	lex_next(lx, 0);
+
+	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 1 : 0;
+	lexer_add_cond(lx, res);
+	return;
+}
+
+void ppd_ifndef(lexer *lx) {
+	lex_next(lx, 0);
+	token t = lex_peek(lx);
+	if (t.type != TOK_IDENT)
+		c_error(&t.loc, "Expected identifier after #ifndef\n");
+	lex_next(lx, 0);
+
+	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 0 : 1;
+	lexer_add_cond(lx, res);
+	return;
+}
+
+void ppd_elif(lexer *lx) {
+	lex_cond *cond = vector_top(&lx->conds);
+	if (cond == NULL) {
+		c_error(&lx->tgt->loc, "#elif before #if\n");
+		return;
+	}
+
+	cond->was_true |= cond->is_true;
+	cond->is_true = (eval_constexpr(lx)) ? 1 : 0;
+	return;
+}
+
+void ppd_else(lexer *lx) {
+	lex_cond *cond = vector_top(&lx->conds);
+	if (cond == NULL) {
+		c_error(&lx->tgt->loc, "#else before #if\n");
+		return;
+	}
+	if (cond->has_else) {
+		c_error(&lx->tgt->loc, "#else after #else\n");
+		return;
+	}
+
+	cond->was_true |= cond->is_true;
+	cond->is_true = 1;
+	cond->has_else = 1;
+	return;
+}
+
+void ppd_endif(lexer *lx) {
+	lex_cond *cond = vector_top(&lx->conds);
+	if (cond == NULL) {
+		c_error(&lx->tgt->loc, "#endif before #if\n");
+		return;
+	}
+
+	lexer_del_cond(lx);
 	return;
 }

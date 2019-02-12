@@ -71,9 +71,6 @@ enum TOK_TYPES {
 	TOK_IDENT
 };
 
-void init_kwtable();
-void close_kwtable();
-
 enum TGT_TYPE {
 	TGT_FILE,
 	TGT_MACRO
@@ -108,19 +105,31 @@ typedef struct LEX_TARGET {
 	struct LEX_TARGET *prev;	//Pointer to previous target
 } lex_target;
 
+typedef struct LEX_CONDITION {
+	int is_true;			//Conditional is currently true
+	int was_true;			//Conditional has already been true once
+	int has_else;			//Else has been encountered
+} lex_cond;
+
 typedef struct LEXER {
 	struct LEX_TARGET *tgt;		//Input stack
 	struct TOKEN_NODE *pre;		//Pre-lexed tokens
 	struct TOKEN ahead;		//Current token
 	struct VECTOR flist;		//List of processed files
+	struct VECTOR conds;		//Preprocessor conditions
 	struct SYMTABLE stb;		//Symbol table
 } lexer;
+
+void init_kwtable();
+void close_kwtable();
 
 struct LEXER *lexer_init(char *fname);
 int lex_open_file(lexer *lx, char *fname);
 void lexer_close(struct LEXER *lx);
 void lexer_tgt_open(lexer *lx, char *name, int type, char *buf);
 void lexer_tgt_close(struct LEXER *lx);
+void lexer_add_cond(struct LEXER *lx, int pass);
+void lexer_del_cond(struct LEXER *lx);
 
 //Used internally by lexer/preprocessor
 void lex_next(struct LEXER *lx, int m_exp);
