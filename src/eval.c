@@ -99,7 +99,7 @@ int eval_constexpr(lexer *lx) {
 		//Finish calculations if the condition has ended
 		if (*cur == '\n' || *cur == '\0') {
 			while (ops.len > 0) {
-				if (vals.len <= 1) {
+				if (vals.len < 1) {
 					c_error(loc, "Operator in #if condition has no numeric RHS\n");
 					break;
 				}
