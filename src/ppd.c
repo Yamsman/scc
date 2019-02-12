@@ -215,7 +215,6 @@ void ppd_ifdef(lexer *lx) {
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifdef\n");
-	lex_next(lx, 0);
 
 	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 1 : 0;
 	lexer_add_cond(lx, res);
@@ -227,7 +226,6 @@ void ppd_ifndef(lexer *lx) {
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifndef\n");
-	lex_next(lx, 0);
 
 	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 0 : 1;
 	lexer_add_cond(lx, res);
