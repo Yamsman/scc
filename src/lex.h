@@ -64,6 +64,7 @@ enum TOK_TYPES {
 	#undef kw
 
 	//Special tokens
+	TOK_DEFINED,
 	TOK_CONST,
 	TOK_STR,
 	TOK_KW,
@@ -123,6 +124,7 @@ void lexer_tgt_close(struct LEXER *lx);
 
 //Used internally by lexer/preprocessor
 void lex_next(struct LEXER *lx, int m_exp);
+int lex_ident(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
 int lex_expand_macro(struct LEXER *lx, struct TOKEN t);
 

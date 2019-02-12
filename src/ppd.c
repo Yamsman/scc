@@ -5,6 +5,7 @@
 #include "sym.h"
 #include "err.h"
 #include "lex.h"
+#include "eval.h"
 #include "ppd.h"
 #include "util/map.h"
 
@@ -45,11 +46,14 @@ void ppd_defparams(lexer *lx, s_type *mtype) {
 
 void ppd_define(lexer *lx) {
 	s_pos *loc = &lx->tgt->loc;
-	//Read macro name
-	lex_next(lx, 0);
-	token mname = lex_peek(lx);
-	if (mname.type != TOK_IDENT)
+
+	//Read macro name manually
+	token mname;
+	lex_wspace(lx);
+	int mlen = lex_ident(lx, &mname);
+	if (mlen == 0)
 		c_error(loc, "Invalid macro name\n");
+	lx->tgt->pos += mlen;
 
 	//Check for and read macro parameter list
 	s_type *mtype = type_new(TYPE_MACRO);
@@ -123,7 +127,8 @@ void ppd_error(lexer *lx) {
 }
 
 void ppd_if(lexer *lx) {
-
+	int res = eval_constexpr(lx);
+	//printf("#if result: %i\n", res);
 }
 
 void ppd_ifdef(lexer *lx) {

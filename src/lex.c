@@ -113,6 +113,7 @@ void lexer_tgt_close(lexer *lx) {
 
 int lex_ident(lexer *lx, token *t) {
 	char *cur = lx->tgt->pos;
+	if (!isalpha(*cur) && *cur != '_') return 0;
 	while (isalnum(*cur) || *cur == '_') 
 		cur++;
 	int len = cur - lx->tgt->pos;
@@ -127,7 +128,7 @@ int lex_ident(lexer *lx, token *t) {
 enum NUM_STATUS {
 	S_NONE,	//No decimal/exponent
 	S_INIT,	//Decimal/exponent exists, but has no trailing digits
-	S_DONE	//Decima/exponent exists and has trailing digits
+	S_DONE	//Decimal/exponent exists and has trailing digits
 };
 
 int lex_num(lexer *lx, token *t) {
@@ -482,6 +483,7 @@ reset:	tgt = lx->tgt;
 			if (*cur == '=') {
 				cur++, t.type = TOK_NEQ;
 			}
+			break;
 		case '<':
 			t.type = TOK_LTH;
 			if (*cur == '=') {
@@ -638,7 +640,7 @@ void lex_ppd(lexer *lx) {
 	switch (ppd.type) {
 		case TOK_KW_DEFINE:  ppd_define(lx);			break;
 		case TOK_KW_ERROR:   ppd_error(lx);			break;
-		case TOK_KW_IF:      //ppd_if(lx);			break;
+		case TOK_KW_IF:      ppd_if(lx);			break;
 		case TOK_KW_IFDEF:   //ppd_ifdef(lx);			break;
 		case TOK_KW_IFNDEF:  /*ppd_ifndef(lx);*/		break;
 		case TOK_KW_INCLUDE: ppd_include(lx);			break;

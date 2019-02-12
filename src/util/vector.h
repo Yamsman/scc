@@ -21,5 +21,10 @@ void vector_add(struct VECTOR *v, void *val);
 void vector_remove(struct VECTOR *v, int index);
 void vector_expand(struct VECTOR *v);
 
+//"Stack" functions
+void vector_push(struct VECTOR *v, void *val);
+void *vector_pop(struct VECTOR *v);
+void *vector_top(struct VECTOR *v);
+
 #endif
 

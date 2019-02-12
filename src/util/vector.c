@@ -69,6 +69,24 @@ void vector_remove(vector *v, int index) {
 	for (int i=index; i<v->len-1; i++)
 		v->table[i] = v->table[i+1];
 	v->table[v->len-1] = NULL;
+	v->len--;
 
 	return;
+}
+
+void vector_push(struct VECTOR *v, void *val) {
+	vector_add(v, val);
+	return;
+}
+
+void *vector_pop(vector *v) {
+	if (v->len == 0) return NULL;
+	void *val = v->table[v->len-1];
+	vector_remove(v, v->len-1);
+	return val;
+}
+
+void *vector_top(vector *v) {
+	if (v->len == 0) return NULL;
+	return v->table[v->len-1];
 }
