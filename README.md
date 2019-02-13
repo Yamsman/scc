@@ -7,7 +7,7 @@ Currently missing a good amount of functionality, but can currently output a lim
 
 ### Lexical analysis and preprocessing
 * Function macro expansion
-* Functionality for conditional preprocessor directives
+* User-defined type recognition
 
 ### Parsing
 * For loops
@@ -16,6 +16,8 @@ Currently missing a good amount of functionality, but can currently output a lim
 * Enums
 * Initializers
 * Bitfields
+* Typedefs
+* Macro expansion in constant expressions
 
 ### Code generation
 * Integer expressions

@@ -11,6 +11,8 @@
 //Returns the precedence of each operation
 int rankof(int op) {
 	switch (op) {
+		case TOK_QMK:		
+		case TOK_COL:		return 12;
 		case TOK_DEFINED:	return 11;
 		case TOK_LOGIC_NOT:
 		case TOK_NOT:		return 10;
@@ -45,8 +47,9 @@ int is_unary(int op) {
 }
 
 //Performs operation op on lhs and rhs and returns the result
-long long do_op(int op, int lhs, int rhs) {
+long long do_op(int op, int lhs, int rhs, int trs) {
 	switch (op) {
+		case TOK_QMK:		return (lhs) ? rhs : trs;
 		case TOK_LOGIC_NOT:	return !lhs;
 		case TOK_NOT:		return ~lhs;
 		case TOK_ASR:		return lhs * rhs;
@@ -71,15 +74,21 @@ long long do_op(int op, int lhs, int rhs) {
 //Pops one or two numbers from vals and an operator from ops, and pushes the result
 void do_calc(vector *ops, vector *vals) {
 	int op = (long long)vector_pop(ops);
+	int trs = (op == TOK_QMK) ? (long long)vector_pop(vals) : 0;
 	int rhs = (!is_unary(op)) ? (long long)vector_pop(vals) : 0;
 	int lhs = (long long)vector_pop(vals);
-	long long res = do_op(op, lhs, rhs);
+	long long res = do_op(op, lhs, rhs, trs);
 	vector_push(vals, (void*)res);
 	return;
 }
 
-//Reads and evaluates a constant expression from the lexer
-int eval_constexpr(lexer *lx) {
+/* 
+ * Reads and evaluates a constant expression from the lexer
+ * If mode is nonzero, the expression is treated as part of an #if directive
+ * If an error is encountered, the integer pointed to by err is set to nonzero
+ * Returns the expression's result
+ */
+int eval_constexpr(lexer *lx, int *err, int mode) {
 	//Lexer positions
 	char *cur = lx->tgt->pos;
 	s_pos *loc = &lx->tgt->loc;
@@ -90,6 +99,7 @@ int eval_constexpr(lexer *lx) {
 	vector_init(&vals, VECTOR_EMPTY);
 
 	//Repeat until endline or end of input
+	int eflag_prev = c_errflag;
 	for (;;) {
 		//Skip whitespace, but stop before a newline
 		while (isspace(*cur) && (*cur != '\n' && *cur != '\0'))
@@ -100,13 +110,14 @@ int eval_constexpr(lexer *lx) {
 		if (*cur == '\n' || *cur == '\0') {
 			while (ops.len > 0) {
 				if (vals.len < 1) {
-					c_error(loc, "Operator in #if condition has no numeric RHS\n");
+					c_error(loc, "Operator in constant expression has no RHS\n");
 					break;
 				}
 				do_calc(&ops, &vals);
 			}
-			if (vals.len > 1)
-				c_error(loc, "Missing operator in #if condition\n");
+			if (vals.len > 1) {
+				c_error(loc, "Missing operator in constant expression\n");
+			}
 			break;
 		}
 		
@@ -133,13 +144,20 @@ int eval_constexpr(lexer *lx) {
 		if (t.type == TOK_CONST) {
 			//Give an error if a float is encountered
 			if (t.dtype->kind == TYPE_FLOAT) {
-				c_error(loc, "Floating point value in #if condition\n");
+				c_error(loc, "Floating point value in constant expression\n");
 				continue;
 			}
 			
 			//Otherwise, push the value to the stack
 			vector_add(&vals, (void*)t.dat.ival);
 		} else if (t.type == TOK_IDENT) {
+			//If the constexpr isn't an #if conditional, error
+			if (!mode) {
+				c_error(&t.loc, "Identifier in constant expression\n");
+				vector_add(&vals, (void*)0);
+				continue;
+			}
+
 			//If the identifier is "defined," push the defined unary operator
 			if (!strcmp(t.dat.sval, "defined")) {
 				vector_push(&ops, (void*)TOK_DEFINED);
@@ -155,7 +173,7 @@ int eval_constexpr(lexer *lx) {
 			//Perform calculations until a right parentheses is reached
 			while ((long long)vector_top(&ops) != TOK_LPR) {
 				if (ops.len == 0) {
-					c_error(loc, "Missing '(' in #if condition\n");
+					c_error(loc, "Missing '(' in constant expression\n");
 					break;
 				}
 				do_calc(&ops, &vals);
@@ -165,13 +183,20 @@ int eval_constexpr(lexer *lx) {
 			//Check if the operator is valid
 			int prec = rankof(t.type);
 			if (prec < 0) {
-				c_error(loc, "Invalid operation in #if condition\n");
+				c_error(loc, "Invalid operation in constant expression\n");
 				continue;
 			}
 
 			//Error for no LHS
 			if (vals.len == 0 && !is_unary(t.type)) {
-				c_error(loc, "Operator in #if condition has no LHS\n");
+				c_error(loc, "Operator in constant expression has no LHS\n");
+				continue;
+			}
+
+			//Handle special case for ternary operator
+			if (t.type == TOK_COL) {
+				if ((long long)vector_top(&ops) != TOK_QMK)
+					c_error(loc, "Missing '?' before ':' in constant expresion\n");
 				continue;
 			}
 
@@ -187,8 +212,9 @@ int eval_constexpr(lexer *lx) {
 		}
 	}
 
-	//Get result
+	//Get result and error flag
 	int res = (long long)vector_pop(&vals);
+	*err = !eflag_prev && c_errflag;
 
 	//Free the stacks
 	vector_close(&ops);

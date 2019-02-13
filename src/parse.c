@@ -5,6 +5,7 @@
 #include "ast.h"
 #include "err.h"
 #include "lex.h"
+#include "eval.h"
 #include "parse.h"
 
 //TODO: remove intermediate decl/expr/stmt variables if only used a few times
@@ -23,6 +24,7 @@ ast_n *parse_fdef(lexer *lx);
 
 vector parse_smemb(lexer *lx);
 s_type *parse_sdef(lexer *lx);
+s_type *parse_edef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
 ast_n *parse_expr_assign(lexer *lx);
@@ -191,6 +193,9 @@ s_type *parse_decl_spec(lexer *lx) {
 			case TOK_KW_STRUCT:
 			case TOK_KW_UNION:
 				return parse_sdef(lx);
+			case TOK_KW_ENUM:
+				return parse_edef(lx);
+				break;
 			default:
 				return type;
 		}
@@ -499,6 +504,85 @@ s_type *parse_sdef(lexer *lx) {
 
 	return type;
 }
+
+//Parses a single enumeration
+void parse_enum(lexer *lx, int *val) {
+	//Read name
+	token t = lex_peek(lx);
+	if (t.type != TOK_IDENT) {
+		c_error(&t.loc, "Invalid input in enumeration\n");
+		return;
+	}
+	lex_adv(lx);
+
+	//Read optional expression
+	if (lex_peek(lx).type == TOK_ASSIGN) {
+		lex_adv(lx);
+
+		int err = 0;
+		int res = eval_constexpr(lx, &err, 0);
+		if (!err) *val = res;
+	}
+
+	//Define a macro for the enumeration
+	char buf[64];
+	snprintf(buf, 64, "%i", *val);
+	symbol *sym = symtable_def(&lx->stb, t.dat.sval, type_new(TYPE_MACRO), &t.loc);
+
+	//Copy the expansion to a new string
+	char *exp = malloc(strlen(buf)+1);
+	strncpy(exp, buf, strlen(buf));
+	sym->mac_exp = exp;
+	
+	(*val)++;
+	return;
+}
+
+//Parse an enum type
+s_type *parse_edef(lexer *lx) {
+	s_type *type = NULL;
+	lex_adv(lx);
+
+	//Read identifier if available
+	char *tname = NULL;
+	s_pos nloc, aloc;
+	if (lex_peek(lx).type == TOK_IDENT) {
+		tname = lex_peek(lx).dat.sval;
+		nloc = lex_peek(lx).loc;
+		lex_adv(lx);
+	}
+
+	//Read list of enumerations
+	aloc = lex_peek(lx).loc;
+	if (lex_peek(lx).type == TOK_LBR) {
+		int e_val = 0;
+		lex_adv(lx);
+		token t = lex_peek(lx);
+		while (t.type != TOK_RBR) {
+			//Check for premature end of input
+			if (t.type == TOK_END) {
+				c_error(&aloc, "Expected '}' before end of input\n");
+				break;
+			}
+
+			//Parse a single enumeration
+			parse_enum(lx, &e_val);
+
+			//Check for comma
+			t = lex_peek(lx);
+			if (t.type == TOK_IDENT) {
+				c_error(&t.loc, "Expected ',' before identifier\n");
+				continue;
+			} else if (t.type != TOK_CMM && t.type != TOK_RBR) {
+				c_error(&t.loc, "Invalid token in enum definition\n");
+			}
+			lex_adv(lx);
+		}
+	}
+
+	return type;
+}
+
 
 /*
  * Expressions

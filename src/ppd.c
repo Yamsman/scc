@@ -205,7 +205,8 @@ void ppd_undef(lexer *lx) {
  */
 
 void ppd_if(lexer *lx) {
-	int res = (eval_constexpr(lx)) ? 1 : 0;
+	int err = 0;
+	int res = (eval_constexpr(lx, &err, 0)) ? 1 : 0;
 	lexer_add_cond(lx, res);
 	return;
 }
@@ -226,6 +227,7 @@ void ppd_ifndef(lexer *lx) {
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifndef\n");
+	lex_next(lx, 0);
 
 	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 0 : 1;
 	lexer_add_cond(lx, res);
@@ -239,8 +241,9 @@ void ppd_elif(lexer *lx) {
 		return;
 	}
 
+	int err = 0;
 	cond->was_true |= cond->is_true;
-	cond->is_true = (eval_constexpr(lx)) ? 1 : 0;
+	cond->is_true = (eval_constexpr(lx, &err, 1)) ? 1 : 0;
 	return;
 }
 
