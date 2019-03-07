@@ -1,19 +1,16 @@
 # scc
 
-A C compiler written with the objective of supporting most C99 features in addition to being self-hosting.
-Currently missing a good amount of functionality, but can currently output a limited amount of x86_64 assembly.
+A hand-written C compiler with the objectives of being C99 compliant and self-hosting.
+Currently, a lot of detailed functionality is missing, but the compiler can already output limited x86\_64 assembly for some constructions.
 
 ## TODO
+Major features that aren't implemented yet:
 
 ### Lexical analysis and preprocessing
-* Function macro expansion
 * User-defined type recognition
 
 ### Parsing
-* For loops
 * Switch statements
-* Ternary operator
-* Enums
 * Initializers
 * Bitfields
 * Typedefs
@@ -24,7 +21,7 @@ Currently missing a good amount of functionality, but can currently output a lim
 * Floating-point expressions
 * Declarations
 * Referencing
-* Array access
+* Array access/Dereferencing
 * Function calls
 
 ### Miscellaneous

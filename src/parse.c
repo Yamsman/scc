@@ -148,9 +148,12 @@ ast_n *parse_decl(lexer *lx) {
 			}
 
 			//Expect ';'
-			lex_adv(lx);
+			token t = lex_peek(lx);
+			if (t.type != TOK_SEM) {
+				c_error(&t.loc, "Expected ';' after declaration\n");
 			}
-			break;
+			lex_adv(lx);
+			} break;
 
 		case TOK_SEM:
 			lex_adv(lx);
@@ -235,14 +238,13 @@ s_type *parse_decltr_back(lexer *lx, s_type *base_type) {
 	if (lex_peek(lx).type == TOK_LBK) {
 		lex_adv(lx);
 
-		//TODO: const_expr
 		type = type_new(TYPE_PTR);
-		type->ref_len = atoi(lex_peek(lx).dat.sval);
-		lex_adv(lx);
+		type->ref_len = parse_constexpr(lx);
 
-		if (lex_peek(lx).type != TOK_RBK) {
-			//Missing ']'
-		}
+		//Missing ']'
+		token t = lex_peek(lx);
+		if (t.type != TOK_RBK)
+			c_error(&t.loc, "Missing ']' after array size\n");
 		lex_adv(lx);
 
 		//Currently parsing in wrong direction
@@ -276,9 +278,10 @@ s_type *parse_decltr(lexer *lx, s_type *type, token *vname) {
 		lex_adv(lx);
 		s_type *n_type = parse_decltr(lx, NULL, vname);
 		
-		if (lex_peek(lx).type != TOK_RPR) {
-			//Missing '('
-		}
+		//Missing '('
+		token t = lex_peek(lx);
+		if (lex_peek(lx).type != TOK_RPR)
+			c_error(&t.loc, "Missing ']' after array size\n");
 		lex_adv(lx);
 
 		//Attach trailing array/func types to n_type
@@ -314,9 +317,8 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 
 	//Create a new symbol
 	//parse_decltr may not set vname in order to implement parameters
-	if (vname.dat.sval == NULL) {
+	if (vname.dat.sval == NULL)
 		c_error(&vname.loc, "Missing variable name in declaration\n");
-	}
 
 	symbol *s = symtable_def(&lx->stb, vname.dat.sval, vtype, &vname.loc);
 	if (!s) { //If duplicate exists
@@ -384,9 +386,8 @@ ast_n *parse_fdef(lexer *lx) {
 
 	//Create symbol (or reuse unless there is a redefinition conflict)
 	symbol *s = symtable_def(&lx->stb, f_name.dat.sval, f_type, &f_name.loc);
-	if (s->fbody != NULL) {
+	if (s->fbody != NULL)
 		c_error(&f_name.loc, "Redefinition of '%s'\n", f_name.dat.sval);
-	}
 
 	//Enter function scope
 	symtable_scope_enter(&lx->stb);
@@ -437,15 +438,16 @@ vector parse_sdef_body(lexer *lx) {
 		}
 
 		//Expect ';'
-		if (lex_peek(lx).type != TOK_SEM) {
-			c_error(&lx->tgt->loc, "Expected ';' before ...\n");
-		}
+		token t = lex_peek(lx);
+		if (t.type != TOK_SEM)
+			c_error(&t.loc, "Missing ';' after member definition\n");
 		lex_adv(lx);
 	}
 
-	if (lex_peek(lx).type != TOK_RBR) {
-		c_error(&lx->tgt->loc, "Expected '}' before ...\n");
-	}
+	//Missing '}'
+	token t = lex_peek(lx);
+	if (t.type != TOK_RBR)
+		c_error(&t.loc, "Missing '}' after struct/union declaration\n");
 	lex_adv(lx);
 
 	return memb;
@@ -669,9 +671,8 @@ ast_n *parse_expr_cond(lexer *lx) {
 		//Read left result and check for ';'
 		ast_n *res_true = parse_expr(lx);
 		token t = lex_peek(lx);
-		if (t.type != TOK_COL) {
+		if (t.type != TOK_COL)
 			c_error(&t.loc, "Expected ':' in ternary expression\n");
-		}
 		lex_adv(lx);
 
 		//Read right result and construct result node
@@ -974,9 +975,9 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			//n_node->dat.expr.right = parse_expr();
 			n_node->dat.expr.right = parse_expr_primary(lx);
 			
-			if (lex_peek(lx).type != TOK_RBK) {
-				//Missing ']'
-			}
+			t = lex_peek(lx);
+			if (t.type != TOK_RBK)
+				c_error(&t.loc, "Missing ']' after array offset\n");
 			lex_adv(lx);
 
 			return n_node;
@@ -994,9 +995,9 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			//Get parameter list
 			n_node->dat.expr.right = parse_expr_arglist(lx);
 			
-			if (lex_peek(lx).type != TOK_RPR) {
-				//Missing ')'
-			}
+			t = lex_peek(lx);
+			if (t.type != TOK_RPR)
+				c_error(&t.loc, "Missing ')' after parameter list\n");
 			lex_adv(lx);
 
 			return n_node;
@@ -1178,7 +1179,8 @@ ast_n *parse_stmt_expr(lexer *lx) {
 	if (lex_peek(lx).type == TOK_SEM) {
 		lex_adv(lx);
 	} else {
-		//missing ';'
+		token t = lex_peek(lx);
+		c_error(&t.loc, "Missing ';' after expression\n");
 	}
 
 	return node;
@@ -1221,10 +1223,12 @@ ast_n *parse_stmt_for(lexer *lx) {
 	 */
 	ast_n *node = astn_new(STMT, STMT_WHILE, lex_peek(lx));
 
+	//Check for missing '('
 	if (lex_peek(lx).type == TOK_LPR) {
 		lex_adv(lx);
 	} else {
-		//missing '('
+		token t = lex_peek(lx);
+		c_error(&t.loc, "Missing '(' before for-loop condition\n");
 	}
 
 	//Parse either a declaration or expression statement
@@ -1243,7 +1247,8 @@ ast_n *parse_stmt_for(lexer *lx) {
 	if (lex_peek(lx).type == TOK_RPR) {
 		lex_adv(lx);
 	} else {
-		//missing ')'
+		token t = lex_peek(lx);
+		c_error(&t.loc, "Missing '(' after for-loop condition\n");
 	}
 
 	//Parse the body
@@ -1322,9 +1327,10 @@ ast_n *parse_stmt_label(lexer *lx) {
 			return NULL;
 	}
 
-	if (lex_peek(lx).type != TOK_COL) {
-		//missing ':'
-	}
+	//Missing ':'
+	t = lex_peek(lx);
+	if (t.type != TOK_COL)
+		c_error(&t.loc, "Missing ':' after label name\n");
 	lex_adv(lx);
 
 	return node;
@@ -1339,9 +1345,8 @@ ast_n *parse_stmt_jump(lexer *lx) {
 			lex_adv(lx);
 
 			token t = lex_peek(lx);
-			if (t.type != TOK_IDENT) {
-				//Expected identifier before...
-			}
+			if (t.type != TOK_IDENT)
+				c_error(&t.loc, "Expected identifier after 'goto'\n");
 			lex_adv(lx);
 			node->dat.stmt.lbl = t.dat.sval;
 			break;
@@ -1362,9 +1367,10 @@ ast_n *parse_stmt_jump(lexer *lx) {
 			break;
 	}
 
-	if (lex_peek(lx).type != TOK_SEM) {
-		//Expected ';' before...
-	}
+	//Missing ';'
+	token t = lex_peek(lx);
+	if (lex_peek(lx).type != TOK_SEM)
+		c_error(&t.loc, "Missing ']' after statement\n");
 	lex_adv(lx);
 
 	return node;
