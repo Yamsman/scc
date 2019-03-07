@@ -659,7 +659,29 @@ base:			n_node = astn_new(EXPR, EXPR_ASSIGN, lex_peek(lx));
 ast_n *parse_expr_cond(lexer *lx) {
 	ast_n *node = parse_expr_logic_or(lx);
 
-	//TODO: ternary
+	if (lex_peek(lx).type == TOK_QMK) {
+		//Construct ternary node
+		ast_n *n_node = astn_new(EXPR, EXPR_COND, lex_peek(lx));
+		ast_expr *n_expr = &n_node->dat.expr;
+		n_expr->left = node;
+		lex_adv(lx);
+
+		//Read left result and check for ';'
+		ast_n *res_true = parse_expr(lx);
+		token t = lex_peek(lx);
+		if (t.type != TOK_COL) {
+			c_error(&t.loc, "Expected ':' in ternary expression\n");
+		}
+		lex_adv(lx);
+
+		//Read right result and construct result node
+		ast_n *res = astn_new(EXPR, EXPR_COND_RES, t);
+		ast_n *res_false = parse_expr_cond(lx);
+		res->dat.expr.left = res_true;
+		res->dat.expr.right = res_false;
+		n_expr->right = res;
+		return n_node;
+	}
 
 	return node;
 }
@@ -668,8 +690,8 @@ ast_n *parse_expr_logic_or(lexer *lx) {
 	ast_n *node = parse_expr_logic_and(lx);
 
 	if (lex_peek(lx).type == TOK_LOGIC_OR) {
-		lex_adv(lx);
 		ast_n *n_node = astn_new(EXPR, EXPR_LOGIC_OR, lex_peek(lx));
+		lex_adv(lx);
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_logic_and(lx);

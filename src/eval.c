@@ -213,8 +213,16 @@ int _eval_constexpr_ast(ast_n *node, int *err) {
 	s_pos *loc = &node->tok.loc;
 	int l_res = _eval_constexpr_ast(node->dat.expr.left, err);
 	int r_res = _eval_constexpr_ast(node->dat.expr.right, err);
+	int t_res = 0;
 	switch (node->dat.expr.kind) {
-		//case ternary
+		case EXPR_COND: {
+			ast_n *res = node->dat.expr.right;
+			r_res = _eval_constexpr_ast(res->dat.expr.left, err);
+			t_res = _eval_constexpr_ast(res->dat.expr.right, err);
+			}
+			return do_op(node->tok.type, l_res, r_res, t_res); 
+		case EXPR_COND_RES:
+			return 0;
 		case EXPR_LOGIC_OR:
 		case EXPR_LOGIC_AND:
 		case EXPR_OR:
