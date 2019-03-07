@@ -217,12 +217,16 @@ int ppd_constexpr(lexer *lx, int *err) {
 
 		//Add the token to the vector
 		token *tn = malloc(sizeof(struct TOKEN));
+		if (t.type == TOK_IDENT && !strcmp(t.dat.sval, "defined")) {
+			t.type = TOK_DEFINED;
+			free(t.dat.sval);
+		}
 		*tn = t;
 		vector_push(&toks, tn);
 	}
 
 	//Call the evaluator
-	int res = eval_constexpr(&toks, err);
+	int res = eval_constexpr(lx, &toks, err);
 
 	vector_close(&toks);
 	return res;

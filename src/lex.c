@@ -23,7 +23,7 @@ void close_kwtable() {
 	return;
 }
 
-token BLANK_TOKEN = {-1, -1, 0, 0};
+token BLANK_TOKEN = {-1, -1, 0, 0, 0};
 lexer *lexer_init(char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
 	lx->tgt = NULL;

@@ -609,8 +609,8 @@ int parse_constexpr(lexer *lx) {
 	//Evaluate the expression
 	int err = 0;
 	int res = eval_constexpr_ast(expr, &err);
-	printf("res: %i\n", res);
 
+	astn_del(expr);
 	return res;
 }
 

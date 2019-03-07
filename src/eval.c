@@ -89,7 +89,7 @@ void do_calc(vector *ops, vector *vals) {
  * Returns the expression's result
  * TODO: pass input as a contiguous array of tokens to reduce memory usage
  */
-int eval_constexpr(vector *input, int *err) {
+int eval_constexpr(lexer *lx, vector *input, int *err) {
 	//Initialize stacks
 	vector ops, vals;
 	vector_init(&ops, VECTOR_EMPTY);
@@ -111,15 +111,15 @@ int eval_constexpr(vector *input, int *err) {
 			vector_push(&vals, (void*)t->dat.ival);
 			free(t->dtype);
 		} else if (t->type == TOK_DEFINED) {
-			vector_pop(&ops);
-			if (t->type != TOK_IDENT) {
+			//Move to the next token and check for an identifier
+			token *ident = input->table[++i];
+			if (i >= input->len || ident->type != TOK_IDENT) {
 				c_error(&t->loc, "Expected identifier after 'defined'\n");
 				continue;
 			}
 
 			//Search the symbol table to check if the identifier is defined
-			//long long res = (symtable_search(&lx->stb, t->dat.sval) != NULL);
-			long long res = 0;
+			long long res = (symtable_search(&lx->stb, t->dat.sval) != NULL);
 			vector_push(&vals, (void*)res);
 		} else if (t->type == TOK_IDENT) {
 			vector_add(&vals, (void*)0);
