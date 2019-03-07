@@ -120,13 +120,15 @@ typedef struct LEXER {
 	struct SYMTABLE stb;		//Symbol table
 } lexer;
 
+extern struct TOKEN BLANK_TOKEN;
+
 void init_kwtable();
 void close_kwtable();
 
 struct LEXER *lexer_init(char *fname);
-int lex_open_file(lexer *lx, char *fname);
+int lex_open_file(struct LEXER *lx, char *fname);
 void lexer_close(struct LEXER *lx);
-void lexer_tgt_open(lexer *lx, char *name, int type, char *buf);
+void lexer_tgt_open(struct LEXER *lx, char *name, int type, char *buf);
 void lexer_tgt_close(struct LEXER *lx);
 void lexer_add_cond(struct LEXER *lx, int pass);
 void lexer_del_cond(struct LEXER *lx);

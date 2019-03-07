@@ -27,6 +27,7 @@ s_type *parse_sdef(lexer *lx);
 s_type *parse_edef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
+int parse_constexpr(lexer *lx);
 ast_n *parse_expr_assign(lexer *lx);
 ast_n *parse_expr_cond(lexer *lx);
 ast_n *parse_expr_logic_or(lexer *lx);
@@ -126,9 +127,10 @@ ast_n *parse_decl(lexer *lx) {
 	
 	//Used for user defined types
 	if (lex_peek(lx).type == TOK_SEM) {
-		lex_adv(lx);
 		//TODO: make a symbol for the user type
-		return astn_new(DECL, DECL_STD);
+		ast_n *decl = astn_new(DECL, DECL_STD, lex_peek(lx));
+		lex_adv(lx);
+		return decl;
 	}
 
 	//Parse declaration body (declarator [+ initializer])
@@ -322,7 +324,7 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 		type_del(vtype);
 	}
 
-	ast_n *node = astn_new(DECL, DECL_STD);
+	ast_n *node = astn_new(DECL, DECL_STD, lex_peek(lx));
 	ast_decl *decl_n = &node->dat.decl;
 	decl_n->sym = s;
 
@@ -395,7 +397,7 @@ ast_n *parse_fdef(lexer *lx) {
 	}
 
 	//Create node and parse body
-	ast_n *node = astn_new(DECL, DECL_FUNC);
+	ast_n *node = astn_new(DECL, DECL_FUNC, lex_peek(lx));
 	node->dat.decl.sym = s;
 	node->dat.decl.block = parse_stmt_cmpd(lx);
 
@@ -518,10 +520,7 @@ void parse_enum(lexer *lx, int *val) {
 	//Read optional expression
 	if (lex_peek(lx).type == TOK_ASSIGN) {
 		lex_adv(lx);
-
-		int err = 0;
-		int res = eval_constexpr(lx, &err, 0);
-		if (!err) *val = res;
+		*val = parse_constexpr(lx);
 	}
 
 	//Define a macro for the enumeration
@@ -603,6 +602,18 @@ ast_n *parse_expr(lexer *lx) {
 	return node;
 }
 
+int parse_constexpr(lexer *lx) {
+	//Read constant expression
+	ast_n *expr = parse_expr_cond(lx);
+	
+	//Evaluate the expression
+	int err = 0;
+	int res = eval_constexpr_ast(expr, &err);
+	printf("res: %i\n", res);
+
+	return res;
+}
+
 ast_n *parse_expr_assign(lexer *lx) {
 	ast_n *node = parse_expr_cond(lx);
 
@@ -622,8 +633,8 @@ ast_n *parse_expr_assign(lexer *lx) {
 		case TOK_ASSIGN_RSHIFT: atype = EXPR_RSHIFT; goto base;
 
 		case TOK_ASSIGN: {
-base:			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_ASSIGN);
+base:			n_node = astn_new(EXPR, EXPR_ASSIGN, lex_peek(lx));
+			lex_adv(lx);
 			ast_expr *n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_assign(lx);
@@ -636,7 +647,7 @@ base:			lex_adv(lx);
 
 	//Expand assignment
 	if (atype) {
-		ast_n *opr = astn_new(EXPR, atype);
+		ast_n *opr = astn_new(EXPR, atype, lex_peek(lx));
 		opr->dat.expr.left = node;
 		opr->dat.expr.right = n_node->dat.expr.right;
 		n_node->dat.expr.right = opr;
@@ -658,7 +669,7 @@ ast_n *parse_expr_logic_or(lexer *lx) {
 
 	if (lex_peek(lx).type == TOK_LOGIC_OR) {
 		lex_adv(lx);
-		ast_n *n_node = astn_new(EXPR, EXPR_LOGIC_OR);
+		ast_n *n_node = astn_new(EXPR, EXPR_LOGIC_OR, lex_peek(lx));
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_logic_and(lx);
@@ -671,8 +682,8 @@ ast_n *parse_expr_logic_and(lexer *lx) {
 	ast_n *node = parse_expr_or(lx);
 
 	if (lex_peek(lx).type == TOK_LOGIC_AND) {
+		ast_n *n_node = astn_new(EXPR, EXPR_LOGIC_AND, lex_peek(lx));
 		lex_adv(lx);
-		ast_n *n_node = astn_new(EXPR, EXPR_LOGIC_AND);
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_or(lx);
@@ -685,8 +696,8 @@ ast_n *parse_expr_or(lexer *lx) {
 	ast_n *node = parse_expr_xor(lx);
 
 	if (lex_peek(lx).type == TOK_OR) {
+		ast_n *n_node = astn_new(EXPR, EXPR_OR, lex_peek(lx));
 		lex_adv(lx);
-		ast_n *n_node = astn_new(EXPR, EXPR_OR);
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_xor(lx);
@@ -699,8 +710,8 @@ ast_n *parse_expr_xor(lexer *lx) {
 	ast_n *node = parse_expr_and(lx);
 
 	if (lex_peek(lx).type == TOK_XOR) {
+		ast_n *n_node = astn_new(EXPR, EXPR_XOR, lex_peek(lx));
 		lex_adv(lx);
-		ast_n *n_node = astn_new(EXPR, EXPR_XOR);
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_and(lx);
@@ -713,8 +724,8 @@ ast_n *parse_expr_and(lexer *lx) {
 	ast_n *node = parse_expr_equal(lx);
 
 	if (lex_peek(lx).type == TOK_AND) {
+		ast_n *n_node = astn_new(EXPR, EXPR_AND, lex_peek(lx));
 		lex_adv(lx);
-		ast_n *n_node = astn_new(EXPR, EXPR_AND);
 		ast_expr *n_expr = &n_node->dat.expr;
 		n_expr->left = node;
 		n_expr->right = parse_expr_equal(lx);
@@ -731,15 +742,15 @@ ast_n *parse_expr_equal(lexer *lx) {
 	token t = lex_peek(lx);
 	switch (t.type) {
 		case TOK_EQ:
+			n_node = astn_new(EXPR, EXPR_EQ, t);
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_EQ);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_relation(lx);
 			return n_node;
 		case TOK_NEQ:
+			n_node = astn_new(EXPR, EXPR_NEQ, t);
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_NEQ);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_relation(lx);
@@ -757,29 +768,29 @@ ast_n *parse_expr_relation(lexer *lx) {
 	token t = lex_peek(lx);
 	switch (t.type) {
 		case TOK_LTH:
+			n_node = astn_new(EXPR, EXPR_LTH, t);
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_LTH);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_shift(lx);
 			return n_node;
 		case TOK_GTH:
+			n_node = astn_new(EXPR, EXPR_GTH, t);
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_GTH);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_shift(lx);
 			return n_node;
 		case TOK_LEQ:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_LEQ);
+			n_node = astn_new(EXPR, EXPR_LEQ, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_shift(lx);
 			return n_node;
 		case TOK_GEQ:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_GEQ);
+			n_node = astn_new(EXPR, EXPR_GEQ, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_shift(lx);
@@ -798,14 +809,14 @@ ast_n *parse_expr_shift(lexer *lx) {
 	switch (t.type) {
 		case TOK_LSHIFT:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_LSHIFT);
+			n_node = astn_new(EXPR, EXPR_LSHIFT, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_addt(lx);
 			return n_node;
 		case TOK_RSHIFT:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_RSHIFT);
+			n_node = astn_new(EXPR, EXPR_RSHIFT, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_addt(lx);
@@ -824,14 +835,14 @@ ast_n *parse_expr_addt(lexer *lx) {
 	switch (t.type) {
 		case TOK_ADD:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_ADD);
+			n_node = astn_new(EXPR, EXPR_ADD, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_addt(lx);
 			return n_node;
 		case TOK_SUB:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_SUB);
+			n_node = astn_new(EXPR, EXPR_SUB, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_addt(lx);
@@ -850,21 +861,21 @@ ast_n *parse_expr_mult(lexer *lx) {
 	switch (t.type) {
 		case TOK_ASR:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_MUL);
+			n_node = astn_new(EXPR, EXPR_MUL, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_cast(lx);
 			return n_node;
 		case TOK_DIV:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_DIV);
+			n_node = astn_new(EXPR, EXPR_DIV, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_cast(lx);
 			return n_node;
 		case TOK_MOD:
 			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_MOD);
+			n_node = astn_new(EXPR, EXPR_MOD, t);
 			n_expr = &n_node->dat.expr;
 			n_expr->left = node;
 			n_expr->right = parse_expr_cast(lx);
@@ -889,14 +900,14 @@ ast_n *parse_expr_unary(lexer *lx) {
 	ast_n *n_node = NULL;
 	token t = lex_peek(lx);
 	switch (t.type) {
-		case TOK_AND: lex_adv(lx); n_node = astn_new(EXPR, EXPR_REF); break;
-		case TOK_ASR: lex_adv(lx); n_node = astn_new(EXPR, EXPR_DEREF); break;
-		case TOK_ADD: lex_adv(lx); n_node = astn_new(EXPR, EXPR_POS); break;
-		case TOK_SUB: lex_adv(lx); n_node = astn_new(EXPR, EXPR_NEG); break;
-		case TOK_NOT: lex_adv(lx); n_node = astn_new(EXPR, EXPR_LOGIC_NOT); break;
-		case TOK_TLD: lex_adv(lx); n_node = astn_new(EXPR, EXPR_NOT); break;
-		case TOK_INC: lex_adv(lx); n_node = astn_new(EXPR, EXPR_INC_PRE); break;
-		case TOK_DEC: lex_adv(lx); n_node = astn_new(EXPR, EXPR_DEC_PRE); break;
+		case TOK_AND: lex_adv(lx); n_node = astn_new(EXPR, EXPR_REF, t); 	break;
+		case TOK_ASR: lex_adv(lx); n_node = astn_new(EXPR, EXPR_DEREF, t); 	break;
+		case TOK_ADD: lex_adv(lx); n_node = astn_new(EXPR, EXPR_POS, t); 	break;
+		case TOK_SUB: lex_adv(lx); n_node = astn_new(EXPR, EXPR_NEG, t); 	break;
+		case TOK_NOT: lex_adv(lx); n_node = astn_new(EXPR, EXPR_LOGIC_NOT, t); 	break;
+		case TOK_TLD: lex_adv(lx); n_node = astn_new(EXPR, EXPR_NOT, t); 	break;
+		case TOK_INC: lex_adv(lx); n_node = astn_new(EXPR, EXPR_INC_PRE, t);	break;
+		case TOK_DEC: lex_adv(lx); n_node = astn_new(EXPR, EXPR_DEC_PRE, t); 	break;
 		//TODO case TOK_KW_SIZEOF:
 	}
 
@@ -933,9 +944,9 @@ ast_n *parse_expr_postfix(lexer *lx) {
 	token t = lex_peek(lx);
 	switch (t.type) {
 		case TOK_LBK: //Array accessor
-			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_ARRAY);
+			n_node = astn_new(EXPR, EXPR_ARRAY, t);
 			n_node->dat.expr.left = node;
+			lex_adv(lx);
 
 			//Get offset
 			//n_node->dat.expr.right = parse_expr();
@@ -948,9 +959,9 @@ ast_n *parse_expr_postfix(lexer *lx) {
 
 			return n_node;
 		case TOK_LPR: //Function calls
-			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_CALL);
+			n_node = astn_new(EXPR, EXPR_CALL, t);
 			n_node->dat.expr.left = node;
+			lex_adv(lx);
 
 			//Empty parameter list
 			if (lex_peek(lx).type == TOK_RPR) {
@@ -972,14 +983,14 @@ ast_n *parse_expr_postfix(lexer *lx) {
 		case TOK_PTR:
 			break;
 		case TOK_INC:
-			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_INC_POST);
+			n_node = astn_new(EXPR, EXPR_INC_POST, t);
 			n_node->dat.expr.left = node;
+			lex_adv(lx);
 			return n_node;
 		case TOK_DEC:
-			lex_adv(lx);
-			n_node = astn_new(EXPR, EXPR_INC_POST);
+			n_node = astn_new(EXPR, EXPR_INC_POST, t);
 			n_node->dat.expr.left = node;
+			lex_adv(lx);
 			return n_node;
 	}
 
@@ -993,7 +1004,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 		case TOK_IDENT: //TODO: improve handling of undefined variables
 			lex_adv(lx);
 			symbol *s = symtable_search(&lx->stb, t.dat.sval);
-			node = astn_new(EXPR, EXPR_IDENT);
+			node = astn_new(EXPR, EXPR_IDENT, t);
 			if (s != NULL) {
 				node->dat.expr.sym = s;
 			} else {
@@ -1004,11 +1015,11 @@ ast_n *parse_expr_primary(lexer *lx) {
 			return node;
 		case TOK_CONST:
 			lex_adv(lx);
-			node = astn_new(EXPR, EXPR_CONST);
+			node = astn_new(EXPR, EXPR_CONST, t);
 			return node;
 		case TOK_STR:
 			lex_adv(lx);
-			node = astn_new(EXPR, EXPR_STR);
+			node = astn_new(EXPR, EXPR_STR, t);
 			return node;
 		case TOK_LPR:
 			lex_adv(lx);
@@ -1091,7 +1102,8 @@ ast_n *parse_condition(lexer *lx, char *of) {
 
 ast_n *parse_stmt_cmpd(lexer *lx) {
 	//Expect '{'
-	if (lex_peek(lx).type == TOK_LBR)
+	token t = lex_peek(lx);
+	if (t.type == TOK_LBR)
 		lex_adv(lx);
 
 	//Parse list of declarations/statements here
@@ -1126,7 +1138,7 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 	if (lex_peek(lx).type == TOK_RBR)
 		lex_adv(lx);
 
-	ast_n *head = astn_new(STMT, STMT_CMPD);
+	ast_n *head = astn_new(STMT, STMT_CMPD, t);
 	head->next = base;
 	return head;
 }
@@ -1138,7 +1150,7 @@ ast_n *parse_stmt_expr(lexer *lx) {
 		return NULL;
 	}
 
-	node = astn_new(STMT, STMT_EXPR);
+	node = astn_new(STMT, STMT_EXPR, lex_peek(lx));
 	node->dat.stmt.expr = parse_expr(lx);
 
 	if (lex_peek(lx).type == TOK_SEM) {
@@ -1154,7 +1166,7 @@ ast_n *parse_stmt_expr(lexer *lx) {
 ast_n *parse_stmt_selection(lexer *lx) {
 	ast_n *node;
 	if (lex_peek(lx).type == TOK_KW_IF) {
-		node = astn_new(STMT, STMT_IF);
+		node = astn_new(STMT, STMT_IF, lex_peek(lx));
 		lex_adv(lx);
 
 		node->dat.stmt.expr = parse_condition(lx, "if statement");
@@ -1164,7 +1176,7 @@ ast_n *parse_stmt_selection(lexer *lx) {
 			node->dat.stmt.else_body = parse_stmt(lx);
 		}
 	} else if (lex_peek(lx).type == TOK_KW_SWITCH) {
-		node = astn_new(STMT, STMT_SWITCH);
+		node = astn_new(STMT, STMT_SWITCH, lex_peek(lx));
 		lex_adv(lx);
 
 		node->dat.stmt.expr = parse_condition(lx, "switch statement");
@@ -1175,7 +1187,7 @@ ast_n *parse_stmt_selection(lexer *lx) {
 }
 
 ast_n *parse_stmt_while(lexer *lx) {
-	ast_n *node = astn_new(STMT, STMT_WHILE);
+	ast_n *node = astn_new(STMT, STMT_WHILE, lex_peek(lx));
 	node->dat.stmt.expr = parse_condition(lx, "while loop");
 	node->dat.stmt.body = parse_stmt(lx);
 	return node;
@@ -1185,7 +1197,7 @@ ast_n *parse_stmt_for(lexer *lx) {
 	/*
 	 * A for loop will become a while loop with two optional parts
 	 */
-	ast_n *node = astn_new(STMT, STMT_WHILE);
+	ast_n *node = astn_new(STMT, STMT_WHILE, lex_peek(lx));
 
 	if (lex_peek(lx).type == TOK_LPR) {
 		lex_adv(lx);
@@ -1217,15 +1229,15 @@ ast_n *parse_stmt_for(lexer *lx) {
 
 	//If the last item isn't blank, join it and the loop body in a block
 	if (cond[2] != NULL) {
-		ast_n *wrap = astn_new(STMT, STMT_CMPD);
+		ast_n *wrap = astn_new(STMT, STMT_CMPD, lex_peek(lx));
 		wrap->next = node;
-		node->next = astn_new(STMT, STMT_EXPR);
+		node->next = astn_new(STMT, STMT_EXPR, lex_peek(lx));
 		node->next->dat.stmt.expr = cond[3];
 	}
 
 	//If the first item isn't blank, wrap the item and the loop in a block
 	if (cond[0] != NULL) {
-		ast_n *wrap = astn_new(STMT, STMT_CMPD);
+		ast_n *wrap = astn_new(STMT, STMT_CMPD, lex_peek(lx));
 		wrap->next = cond[0];
 		cond[0]->next = node;
 		return wrap;
@@ -1234,7 +1246,7 @@ ast_n *parse_stmt_for(lexer *lx) {
 }
 
 ast_n *parse_stmt_do_while(lexer *lx) {
-	ast_n *node = astn_new(STMT, STMT_DO_WHILE);
+	ast_n *node = astn_new(STMT, STMT_DO_WHILE, lex_peek(lx));
 
 	//Parse body
 	node->dat.stmt.body = parse_stmt(lx);
@@ -1270,19 +1282,19 @@ ast_n *parse_stmt_label(lexer *lx) {
 	token t = lex_peek(lx);
 	switch (t.type) {
 		case TOK_IDENT:
-			node = astn_new(STMT, STMT_LABEL);
+			node = astn_new(STMT, STMT_LABEL, t);
 			symtable_def_label(&lx->stb, t.dat.sval, &t.loc);
 			node->dat.stmt.lbl = t.dat.sval;
 			lex_adv(lx);
 			break;
 		case TOK_KW_CASE:
-			lex_adv(lx);
-			node = astn_new(STMT, STMT_CASE);
+			node = astn_new(STMT, STMT_CASE, t);
 			node->dat.stmt.expr = parse_expr_cond(lx); //TODO: parse_constexpr();
+			lex_adv(lx);
 			break;
 		case TOK_KW_DEFAULT:
+			node = astn_new(STMT, STMT_DEFAULT, t);
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_DEFAULT);
 			break;
 		default:
 			return NULL;
@@ -1301,8 +1313,8 @@ ast_n *parse_stmt_jump(lexer *lx) {
 
 	switch (lex_peek(lx).type) {
 		case TOK_KW_GOTO:
+			node = astn_new(STMT, STMT_GOTO, lex_peek(lx));
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_GOTO);
 
 			token t = lex_peek(lx);
 			if (t.type != TOK_IDENT) {
@@ -1312,16 +1324,16 @@ ast_n *parse_stmt_jump(lexer *lx) {
 			node->dat.stmt.lbl = t.dat.sval;
 			break;
 		case TOK_KW_CONTINUE:
+			node = astn_new(STMT, STMT_CONTINUE, lex_peek(lx));
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_CONTINUE);
 			break;
 		case TOK_KW_BREAK:
+			node = astn_new(STMT, STMT_BREAK, lex_peek(lx));
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_BREAK);
 			break;
 		case TOK_KW_RETURN:
+			node = astn_new(STMT, STMT_RETURN, lex_peek(lx));
 			lex_adv(lx);
-			node = astn_new(STMT, STMT_RETURN);
 			
 			if (lex_peek(lx).type != TOK_SEM)
 				node->dat.stmt.expr = parse_expr(lx);

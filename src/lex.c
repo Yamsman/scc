@@ -395,7 +395,7 @@ reset:	tgt = lx->tgt;
 			t.type = TOK_SNS;
 			if (*cur == '#') {
 				cur++, t.type = TOK_DNS;
-			} else if (!nline) {
+			} else if (!nline && loc->col != 1) {
 				c_error(loc, "Stray '#' in source\n");
 			}
 			break;
@@ -570,7 +570,7 @@ num_case:		cur--;
 			else if (t.dtype->kind == TYPE_FLOAT)
 				printf("%lf\n", t.dat.fval);
 			*/
-			free(t.dtype); //temporary
+			//free(t.dtype); //temporary
 			t.type = TOK_CONST;
 			break;
 		default: 

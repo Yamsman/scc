@@ -2,6 +2,7 @@
 #define AST_H
 
 #include "err.h"
+#include "lex.h"
 
 /*
  * Node enums
@@ -103,7 +104,7 @@ typedef struct AST_NODE {
 			struct AST_NODE *else_body; //stmt
 		} stmt;
 	} dat;
-	struct SRC_POS loc;
+	struct TOKEN tok;
 	struct AST_NODE *next;
 } ast_n;
 
@@ -111,7 +112,7 @@ typedef struct AST_DECL ast_decl;
 typedef struct AST_EXPR ast_expr;
 typedef struct AST_STMT ast_stmt;
 
-ast_n *astn_new(int kind, int s_kind);
-void astn_del(ast_n *node);
+struct AST_NODE *astn_new(int kind, int s_kind, token t);
+void astn_del(struct AST_NODE *node);
 
 #endif

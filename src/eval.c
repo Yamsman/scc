@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 #include "err.h"
 #include "sym.h"
 #include "lex.h"
+#include "ast.h"
 #include "eval.h"
 #include "util/vector.h"
 
@@ -83,97 +83,54 @@ void do_calc(vector *ops, vector *vals) {
 }
 
 /* 
- * Reads and evaluates a constant expression from the lexer
- * If mode is nonzero, the expression is treated as part of an #if directive
+ * Evaluates a constant expression passed as a vector of tokens in infix order
+ * The tokens are deallocated as they are processed
  * If an error is encountered, the integer pointed to by err is set to nonzero
  * Returns the expression's result
+ * TODO: pass input as a contiguous array of tokens to reduce memory usage
  */
-int eval_constexpr(lexer *lx, int *err, int mode) {
-	//Lexer positions
-	char *cur = lx->tgt->pos;
-	s_pos *loc = &lx->tgt->loc;
-
-	//Set up calculator stacks
+int eval_constexpr(vector *input, int *err) {
+	//Initialize stacks
 	vector ops, vals;
 	vector_init(&ops, VECTOR_EMPTY);
 	vector_init(&vals, VECTOR_EMPTY);
 
-	//Repeat until endline or end of input
+	//Process input token by token
+	int i = 0;
 	int eflag_prev = c_errflag;
-	for (;;) {
-		//Skip whitespace, but stop before a newline
-		while (isspace(*cur) && (*cur != '\n' && *cur != '\0'))
-			cur++;
-		lx->tgt->pos = cur;
-
-		//Finish calculations if the condition has ended
-		if (*cur == '\n' || *cur == '\0') {
-			while (ops.len > 0) {
-				if (vals.len < 1) {
-					c_error(loc, "Operator in constant expression has no RHS\n");
-					break;
-				}
-				do_calc(&ops, &vals);
+	for (; i<input->len; i++) {
+		token *t = input->table[i];
+		if (t->type == TOK_CONST) {
+			//Ensure the constant is an integer
+			if (t->dtype->kind == TYPE_FLOAT) {
+				c_error(&t->loc, "Floating point value in constant expression\n");
+				continue;
 			}
-			if (vals.len > 1) {
-				c_error(loc, "Missing operator in constant expression\n");
-			}
-			break;
-		}
-		
-		//Get the next token
-		lex_next(lx, 1);
-		cur = lx->tgt->pos;
-		token t = lex_peek(lx);
 
-		//Handle 'defined' operation
-		if ((long long)vector_top(&ops) == TOK_DEFINED) {
+			//Push the operand
+			vector_push(&vals, (void*)t->dat.ival);
+			free(t->dtype);
+		} else if (t->type == TOK_DEFINED) {
 			vector_pop(&ops);
-			if (t.type != TOK_IDENT) {
-				c_error(loc, "Expected identifier after 'defined'\n");
+			if (t->type != TOK_IDENT) {
+				c_error(&t->loc, "Expected identifier after 'defined'\n");
 				continue;
 			}
 
 			//Search the symbol table to check if the identifier is defined
-			long long res = (symtable_search(&lx->stb, t.dat.sval) != NULL);
+			//long long res = (symtable_search(&lx->stb, t->dat.sval) != NULL);
+			long long res = 0;
 			vector_push(&vals, (void*)res);
-			continue;
-		}
-
-		//Use token as new input for evaluation
-		if (t.type == TOK_CONST) {
-			//Give an error if a float is encountered
-			if (t.dtype->kind == TYPE_FLOAT) {
-				c_error(loc, "Floating point value in constant expression\n");
-				continue;
-			}
-			
-			//Otherwise, push the value to the stack
-			vector_add(&vals, (void*)t.dat.ival);
-		} else if (t.type == TOK_IDENT) {
-			//If the constexpr isn't an #if conditional, error
-			if (!mode) {
-				c_error(&t.loc, "Identifier in constant expression\n");
-				vector_add(&vals, (void*)0);
-				continue;
-			}
-
-			//If the identifier is "defined," push the defined unary operator
-			if (!strcmp(t.dat.sval, "defined")) {
-				vector_push(&ops, (void*)TOK_DEFINED);
-				continue;
-			}
-
-			//Otherwise, push zero
+		} else if (t->type == TOK_IDENT) {
 			vector_add(&vals, (void*)0);
-		} else if (t.type == TOK_LPR) {
+		} else if (t->type == TOK_LPR) {
 			//Push a left parentheses
-			vector_push(&ops, (void*)(long long)t.type);
-		} else if (t.type == TOK_RPR) {
+			vector_push(&ops, (void*)(long long)t->type);
+		} else if (t->type == TOK_RPR) {
 			//Perform calculations until a right parentheses is reached
 			while ((long long)vector_top(&ops) != TOK_LPR) {
 				if (ops.len == 0) {
-					c_error(loc, "Missing '(' in constant expression\n");
+					c_error(&t->loc, "Missing '(' in constant expression\n");
 					break;
 				}
 				do_calc(&ops, &vals);
@@ -181,22 +138,24 @@ int eval_constexpr(lexer *lx, int *err, int mode) {
 			vector_pop(&ops);
 		} else {
 			//Check if the operator is valid
-			int prec = rankof(t.type);
+			int op = t->type;
+			int prec = rankof(t->type);
 			if (prec < 0) {
-				c_error(loc, "Invalid operation in constant expression\n");
+				c_error(&t->loc, "Invalid operation in constant expression\n");
 				continue;
 			}
 
 			//Error for no LHS
-			if (vals.len == 0 && !is_unary(t.type)) {
-				c_error(loc, "Operator in constant expression has no LHS\n");
+			if (vals.len == 0 && !is_unary(t->type)) {
+				c_error(&t->loc, "Operator in constant expression has no LHS\n");
 				continue;
 			}
 
 			//Handle special case for ternary operator
-			if (t.type == TOK_COL) {
+			if (t->type == TOK_COL) {
 				if ((long long)vector_top(&ops) != TOK_QMK)
-					c_error(loc, "Missing '?' before ':' in constant expresion\n");
+					c_error(&t->loc, "Missing '?' before ':' in"
+							"constant expresion\n");
 				continue;
 			}
 
@@ -208,17 +167,109 @@ int eval_constexpr(lexer *lx, int *err, int mode) {
 				if (prec >= top_prec) break;
 				do_calc(&ops, &vals);
 			}
-			vector_push(&ops, (void*)(long long)t.type);
+			vector_push(&ops, (void*)(long long)t->type);
 		}
+		free(input->table[i]);
 	}
 
-	//Get result and error flag
-	int res = (long long)vector_pop(&vals);
-	*err = !eflag_prev && c_errflag;
+	//Finish calculations if the condition has ended
+	while (ops.len > 0) {
+		if (vals.len < 1) {
+			c_error(NULL, "Operator in constant expression has no RHS\n");
+			break;
+		}
+		do_calc(&ops, &vals);
+	}
+	if (vals.len > 1) {
+		c_error(NULL, "Missing operator in constant expression\n");
+	}
 
-	//Free the stacks
+	//If items remain in the input, free them
+	for (; i<input->len; i++) {
+		token *t = input->table[i];
+		if (t->dtype != NULL)
+			free(t->dtype);
+		free(t);
+	}
+
+	//Get result
+	int res = (long long)vector_top(&vals);
+	*err = !eflag_prev && c_errflag;
 	vector_close(&ops);
 	vector_close(&vals);
 
+	return res;
+}
+
+/* 
+ * Evaluates a constant expression passed as a syntax tree
+ * If an error is encountered, the integer pointed to by err is set to nonzero
+ * Returns the expression's result
+ */
+int _eval_constexpr_ast(ast_n *node, int *err) {
+	if (node == NULL) return 0;
+
+	//Perform action
+	s_pos *loc = &node->tok.loc;
+	int l_res = _eval_constexpr_ast(node->dat.expr.left, err);
+	int r_res = _eval_constexpr_ast(node->dat.expr.right, err);
+	switch (node->dat.expr.kind) {
+		//case ternary
+		case EXPR_LOGIC_OR:
+		case EXPR_LOGIC_AND:
+		case EXPR_OR:
+		case EXPR_XOR:
+		case EXPR_AND:
+		case EXPR_GTH:
+		case EXPR_LTH:
+		case EXPR_GEQ:
+		case EXPR_LEQ:
+		case EXPR_LSHIFT:
+		case EXPR_RSHIFT:
+		case EXPR_EQ:
+		case EXPR_NEQ:
+		case EXPR_ADD:
+		case EXPR_SUB:
+		case EXPR_MUL:
+		case EXPR_DIV:
+			return do_op(node->tok.type, l_res, r_res, 0);
+		case EXPR_MOD:
+		case EXPR_POS:
+		case EXPR_NEG:
+		case EXPR_NOT:
+		case EXPR_LOGIC_NOT:
+			return do_op(node->tok.type, l_res, 0, 0);
+			break;
+		case EXPR_CAST:
+		case EXPR_REF:
+		case EXPR_DEREF:
+		case EXPR_INC_PRE:
+		case EXPR_DEC_PRE:
+		case EXPR_ARRAY:
+		case EXPR_CALL:
+		case EXPR_MEMB:
+		case EXPR_PTR_MEMB:
+		case EXPR_INC_POST:
+		case EXPR_DEC_POST:
+			c_error(loc, "Invalid operation in constant expression\n");
+			return 0;
+		case EXPR_IDENT:
+			c_error(loc, "Identifier in constant expression\n");
+			return 0;
+		case EXPR_CONST:
+			if (node->tok.dtype->kind == TYPE_FLOAT)
+				c_error(loc, "Floating point value in constant expression\n");
+			return node->tok.dat.ival;
+		default:
+			c_error(loc, "Invalid constant expression\n");
+			break;
+	}
+	return -1;
+}
+
+int eval_constexpr_ast(ast_n *root, int *err) {
+	int eflag_prev = c_errflag;
+	int res = _eval_constexpr_ast(root, err);
+	*err = !eflag_prev && c_errflag;
 	return res;
 }

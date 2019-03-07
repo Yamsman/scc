@@ -204,9 +204,33 @@ void ppd_undef(lexer *lx) {
  * Conditional directives
  */
 
+//Reads a constant expression from the lexer and evaluate it
+int ppd_constexpr(lexer *lx, int *err) {
+	vector toks;
+	vector_init(&toks, VECTOR_EMPTY);
+
+	//Get tokens until the end of the line
+	int nline = lex_wspace(lx);
+	while (!(nline = lex_wspace(lx))) {
+		lex_next(lx, 0);
+		token t = lex_peek(lx);
+
+		//Add the token to the vector
+		token *tn = malloc(sizeof(struct TOKEN));
+		*tn = t;
+		vector_push(&toks, tn);
+	}
+
+	//Call the evaluator
+	int res = eval_constexpr(&toks, err);
+
+	vector_close(&toks);
+	return res;
+}
+
 void ppd_if(lexer *lx) {
 	int err = 0;
-	int res = (eval_constexpr(lx, &err, 0)) ? 1 : 0;
+	int res = (ppd_constexpr(lx, &err)) ? 1 : 0;
 	lexer_add_cond(lx, res);
 	return;
 }
@@ -243,7 +267,8 @@ void ppd_elif(lexer *lx) {
 
 	int err = 0;
 	cond->was_true |= cond->is_true;
-	cond->is_true = (eval_constexpr(lx, &err, 1)) ? 1 : 0;
+	cond->is_true = (ppd_constexpr(lx, &err)) ? 1 : 0;
+	cond->is_true = 0;
 	return;
 }
 
