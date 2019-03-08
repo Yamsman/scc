@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "sym.h"
 #include "lex.h"
 #include "ast.h"
 
@@ -47,6 +48,10 @@ void astn_del(ast_n *node) {
 			break;
 	}
 	astn_del(node->next);
+
+	//Free node data type tags
+	if (node->tok.dtype != NULL)
+		type_del(node->tok.dtype);
 
 	free(node);
 	return;

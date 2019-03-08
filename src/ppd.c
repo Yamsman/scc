@@ -207,7 +207,7 @@ void ppd_undef(lexer *lx) {
 //Reads a constant expression from the lexer and evaluate it
 int ppd_constexpr(lexer *lx, int *err) {
 	vector toks;
-	vector_init(&toks, VECTOR_EMPTY);
+	vector_init(&toks, VECTOR_DEFAULT);
 
 	//Get tokens until the end of the line
 	int nline = lex_wspace(lx);
@@ -217,17 +217,25 @@ int ppd_constexpr(lexer *lx, int *err) {
 
 		//Add the token to the vector
 		token *tn = malloc(sizeof(struct TOKEN));
-		if (t.type == TOK_IDENT && !strcmp(t.dat.sval, "defined")) {
+		if (t.type == TOK_IDENT && !strcmp(t.dat.sval, "defined"))
 			t.type = TOK_DEFINED;
-			free(t.dat.sval);
-		}
 		*tn = t;
 		vector_push(&toks, tn);
 	}
 
 	//Call the evaluator
 	int res = eval_constexpr(lx, &toks, err);
-
+	
+	//Clean up
+	for (int i = 0; i<toks.len; i++) {
+		token *t = toks.table[i];
+		if (t->dtype != NULL) {
+			type_del(t->dtype);
+		} else if (t->type == TOK_IDENT) {
+			free(t->dat.sval);
+		}
+		free(t);
+	}
 	vector_close(&toks);
 	return res;
 }

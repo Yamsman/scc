@@ -49,7 +49,7 @@ void *vector_get(vector *v, int index) {
 
 void vector_add(vector *v, void *val) {
 	//Allocate initial space if vector was initialized as empty
-	if (v->len == VECTOR_EMPTY)
+	if (v->max == VECTOR_EMPTY)
 		vector_init(v, VECTOR_DEFAULT);
 
 	//Expand the table if there is no room left

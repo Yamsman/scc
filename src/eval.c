@@ -92,8 +92,8 @@ void do_calc(vector *ops, vector *vals) {
 int eval_constexpr(lexer *lx, vector *input, int *err) {
 	//Initialize stacks
 	vector ops, vals;
-	vector_init(&ops, VECTOR_EMPTY);
-	vector_init(&vals, VECTOR_EMPTY);
+	vector_init(&ops, VECTOR_DEFAULT);
+	vector_init(&vals, VECTOR_DEFAULT);
 
 	//Process input token by token
 	int i = 0;
@@ -109,7 +109,6 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 
 			//Push the operand
 			vector_push(&vals, (void*)t->dat.ival);
-			free(t->dtype);
 		} else if (t->type == TOK_DEFINED) {
 			//Move to the next token and check for an identifier
 			token *ident = input->table[++i];
@@ -169,7 +168,6 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 			}
 			vector_push(&ops, (void*)(long long)t->type);
 		}
-		free(input->table[i]);
 	}
 
 	//Finish calculations if the condition has ended
@@ -182,14 +180,6 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 	}
 	if (vals.len > 1) {
 		c_error(NULL, "Missing operator in constant expression\n");
-	}
-
-	//If items remain in the input, free them
-	for (; i<input->len; i++) {
-		token *t = input->table[i];
-		if (t->dtype != NULL)
-			free(t->dtype);
-		free(t);
 	}
 
 	//Get result

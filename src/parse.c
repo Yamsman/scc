@@ -25,6 +25,7 @@ ast_n *parse_fdef(lexer *lx);
 vector parse_smemb(lexer *lx);
 s_type *parse_sdef(lexer *lx);
 s_type *parse_edef(lexer *lx);
+s_type *parse_tdef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
 int parse_constexpr(lexer *lx);
@@ -125,18 +126,20 @@ ast_n *parse_decl(lexer *lx) {
 	if (!type)
 		return NULL;
 	
-	//Used for user defined types
-	if (lex_peek(lx).type == TOK_SEM) {
-		//TODO: make a symbol for the user type
-		ast_n *decl = astn_new(DECL, DECL_STD, lex_peek(lx));
+	//Check if specifiers were immediately followed by a semicolon
+	token t = lex_peek(lx);
+	if (t.type == TOK_SEM) {
+		//Check for blank definition
+		if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION)
+			c_error(&t.loc, "Declaration declares nothing\n");
 		lex_adv(lx);
-		return decl;
+		//type_del(type);
+		return NULL;
 	}
 
 	//Parse declaration body (declarator [+ initializer])
 	char *name = NULL;
 	ast_n *node = parse_decl_body(lx, type);
-
 	switch (lex_peek(lx).type) {
 		//Parse multiple declarations
 		case TOK_CMM: {
@@ -148,7 +151,7 @@ ast_n *parse_decl(lexer *lx) {
 			}
 
 			//Expect ';'
-			token t = lex_peek(lx);
+			t = lex_peek(lx);
 			if (t.type != TOK_SEM) {
 				c_error(&t.loc, "Expected ';' after declaration\n");
 			}
@@ -171,6 +174,7 @@ ast_n *parse_decl(lexer *lx) {
 s_type *parse_decl_spec(lexer *lx) {
 	s_type *type = type_new(TYPE_UNDEF);
 
+	s_pos begin = lex_peek(lx).loc;
 	for (;;) {
 		token t = lex_peek(lx);
 		switch (t.type) {
@@ -190,6 +194,7 @@ s_type *parse_decl_spec(lexer *lx) {
 			case TOK_KW_STATIC:
 			case TOK_KW_AUTO:
 			case TOK_KW_REGISTER:
+			case TOK_KW_TYPEDEF:
 				if (type->s_class != CLASS_UNDEF) {
 					c_error(&t.loc, "Multiple storage classes in declaration\n");
 				}
@@ -197,14 +202,21 @@ s_type *parse_decl_spec(lexer *lx) {
 				break;
 			case TOK_KW_STRUCT:
 			case TOK_KW_UNION:
+				type_del(type);
 				return parse_sdef(lx);
 			case TOK_KW_ENUM:
+				type_del(type);
 				return parse_edef(lx);
-				break;
 			default:
 				return type;
 		}
 		lex_adv(lx);
+	}
+
+	//No type kind
+	if (type->kind == TYPE_UNDEF) {
+		c_warn(&begin, "Declaration defaults to 'int'\n");
+		type->kind = TYPE_INT;
 	}
 
 	return type;
@@ -436,6 +448,7 @@ vector parse_sdef_body(lexer *lx) {
 		} else {
 			c_error(&mname.loc, "Declaration declares nothing\n");
 		}
+		type_del(base_type);
 
 		//Expect ';'
 		token t = lex_peek(lx);
@@ -496,11 +509,16 @@ s_type *parse_sdef(lexer *lx) {
 	} else {
 		symbol *s = NULL;
 		if (type->param.len == VECTOR_EMPTY) {
+			//Search the symbol table for an existing definition
 			s = symtable_search(&lx->stb, tname);
+			type_del(type);
 			if (s == NULL) {
 				c_error(&nloc, "Undefined struct '%s'\n", tname);
+				free(tname);
 				return NULL;
 			}
+			free(tname);
+			type = s->type;
 		} else {
 			s = symtable_def(&lx->stb, tname, type, &nloc);
 		}
@@ -584,6 +602,9 @@ s_type *parse_edef(lexer *lx) {
 	return type;
 }
 
+s_type *parse_tdef(lexer *lx) {
+
+}
 
 /*
  * Expressions
@@ -1154,7 +1175,13 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 		} else {
 			last->next = node;
 		}
-		last = node;
+
+		//Move to the end of the list
+		//If node already has a next, move to the end of it
+		if (node != NULL)
+			last = node;
+		while (last->next != NULL)
+			last = last->next;
 	}
 
 	//Expect '}'
@@ -1218,9 +1245,7 @@ ast_n *parse_stmt_while(lexer *lx) {
 }
 
 ast_n *parse_stmt_for(lexer *lx) {
-	/*
-	 * A for loop will become a while loop with two optional parts
-	 */
+	//A for loop will become a while loop with two optional parts
 	ast_n *node = astn_new(STMT, STMT_WHILE, lex_peek(lx));
 
 	//Check for missing '('
@@ -1251,7 +1276,8 @@ ast_n *parse_stmt_for(lexer *lx) {
 		c_error(&t.loc, "Missing '(' after for-loop condition\n");
 	}
 
-	//Parse the body
+	//Parse the body and set the condition
+	node->dat.stmt.expr = cond[1];
 	node->dat.stmt.body = parse_stmt(lx);
 
 	//If the last item isn't blank, join it and the loop body in a block
@@ -1316,8 +1342,8 @@ ast_n *parse_stmt_label(lexer *lx) {
 			break;
 		case TOK_KW_CASE:
 			node = astn_new(STMT, STMT_CASE, t);
-			node->dat.stmt.expr = parse_expr_cond(lx); //TODO: parse_constexpr();
 			lex_adv(lx);
+			node->dat.stmt.expr = parse_expr_cond(lx); //TODO: parse_constexpr();
 			break;
 		case TOK_KW_DEFAULT:
 			node = astn_new(STMT, STMT_DEFAULT, t);
