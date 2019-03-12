@@ -14,7 +14,7 @@ Major features that aren't implemented yet:
 * Initializers
 * Bitfields
 * Typedefs
-* Macro expansion in constant expressions
+* Type casting
 
 ### Code generation
 * Integer expressions

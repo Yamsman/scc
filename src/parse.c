@@ -1280,20 +1280,18 @@ ast_n *parse_stmt_for(lexer *lx) {
 	node->dat.stmt.expr = cond[1];
 	node->dat.stmt.body = parse_stmt(lx);
 
-	//If the last item isn't blank, join it and the loop body in a block
+	//If the last item isn't blank, add it to the end of the loop body
 	if (cond[2] != NULL) {
-		ast_n *wrap = astn_new(STMT, STMT_CMPD, lex_peek(lx));
-		wrap->next = node;
-		node->next = astn_new(STMT, STMT_EXPR, lex_peek(lx));
-		node->next->dat.stmt.expr = cond[3];
+		ast_n *end = node->dat.stmt.body;
+		while (end->next != NULL)
+			end = end->next;
+		end->next = cond[2];
 	}
 
-	//If the first item isn't blank, wrap the item and the loop in a block
+	//If the first item isn't blank, set its next to the loop and return it
 	if (cond[0] != NULL) {
-		ast_n *wrap = astn_new(STMT, STMT_CMPD, lex_peek(lx));
-		wrap->next = cond[0];
 		cond[0]->next = node;
-		return wrap;
+		return cond[0];
 	}
 	return node;
 }
