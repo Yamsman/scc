@@ -621,12 +621,11 @@ int lex_expand_macro(lexer *lx, token t) {
 			}
 		}
 		if (expanded) return -1;
-		tgt->pos = cur;
 
 		//Check for function macro arguments
 		//TODO: skip whitespace, error handling, loc updating
-		/*
 		lex_next(lx, 0);
+		/*
 		if (lex_peek(lx).kind == TOK_LPR) {
 			cur = tgt->pos;
 			char *begin = cur;
