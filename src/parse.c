@@ -929,14 +929,50 @@ ast_n *parse_expr_mult(lexer *lx) {
 	return node;
 }
 
-//TODO:
 ast_n *parse_expr_cast(lexer *lx) {
 	ast_n *node = parse_expr_unary(lx);
+	
+	ast_n *n_node;
+	token t = lex_peek(lx);
+	if (t.type == TOK_LPR) {
+		lex_adv(lx);
+		
+		//Parse type
+		token vname = BLANK_TOKEN;
+		s_type *base_type = parse_decl_spec(lx);
+		s_type *type = parse_decltr(lx, base_type, &vname);
+		
+		//Ensure the type didn't contain a variable name
+		if (vname.type != -1)
+			c_error(&vname.loc, "Unexpected identifier in cast expression\n");
 
-	if (lex_peek(lx).type == TOK_LPR) {
+		//Check for ')'
+		token t = lex_peek(lx);
+		if (t.type != TOK_RPR)
+			c_error(&t.loc, "Missing ')' after parameter list\n");
+		lex_adv(lx);
 
+		//Parse following the type cast
+		ast_n *n_node = astn_new(EXPR, EXPR_CAST, t);
+		n_node->dat.expr.type = type;
+		n_node->dat.expr.left = parse_expr_cast(lx);
+
+		//Join to results of parse_expr_unary if needed
+		//If the operation is a reference or inc/dec, flag an error
+		if (node != NULL) {
+			ast_expr *n_expr = &node->dat.expr;
+			if (n_expr->kind == EXPR_INC_PRE)
+				c_error(NULL, "lvalue required for pre-increment\n");
+			if (n_expr->kind == EXPR_DEC_PRE)
+				c_error(NULL, "lvalue required for pre-decrement\n");
+			if (n_expr->kind == EXPR_REF)
+				c_error(NULL, "lvalue required for reference operation\n");
+			n_expr->left = n_node;
+			return node;
+		}
+		return n_node;
 	}
-
+	
 	return node; 
 }
 
@@ -955,7 +991,6 @@ ast_n *parse_expr_unary(lexer *lx) {
 		//TODO case TOK_KW_SIZEOF:
 	}
 
-	//TODO: parse expr_cast instead if & * + - ! ~
 	ast_n *node = parse_expr_postfix(lx);
 	if (n_node != NULL) {
 		n_node->dat.expr.left = node;
@@ -993,8 +1028,8 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			lex_adv(lx);
 
 			//Get offset
-			//n_node->dat.expr.right = parse_expr();
-			n_node->dat.expr.right = parse_expr_primary(lx);
+			n_node->dat.expr.right = parse_expr(lx);
+			//n_node->dat.expr.right = parse_expr_primary(lx);
 			
 			t = lex_peek(lx);
 			if (t.type != TOK_RBK)
@@ -1003,9 +1038,15 @@ ast_n *parse_expr_postfix(lexer *lx) {
 
 			return n_node;
 		case TOK_LPR: //Function calls
+			//Check for a cast expression
+			lex_adv(lx);
+			if (is_type_spec(lex_peek(lx))) {
+				lex_unget(lx, make_tok_node(lex_peek(lx)));
+				lex_unget(lx, make_tok_node(t));
+				break;
+			}
 			n_node = astn_new(EXPR, EXPR_CALL, t);
 			n_node->dat.expr.left = node;
-			lex_adv(lx);
 
 			//Empty parameter list
 			if (lex_peek(lx).type == TOK_RPR) {
@@ -1023,8 +1064,20 @@ ast_n *parse_expr_postfix(lexer *lx) {
 
 			return n_node;
 		case TOK_PRD:
-			break;
 		case TOK_PTR:
+			n_node = astn_new(EXPR, (t.type == TOK_PRD) ? EXPR_MEMB : EXPR_PTR_MEMB, t);
+			lex_adv(lx);
+
+			//Check for identifier
+			t = lex_peek(lx);
+			if (t.type != TOK_IDENT) {
+				c_error(&t.loc, "Expected identifier after '%s'\n",
+					(t.type == TOK_PRD) ? "." : "->");
+			}
+			n_node->dat.expr.left = node;
+			n_node->dat.expr.right = astn_new(EXPR, EXPR_IDENT, t);
+			lex_adv(lx);
+
 			break;
 		case TOK_INC:
 			n_node = astn_new(EXPR, EXPR_INC_POST, t);
@@ -1067,6 +1120,14 @@ ast_n *parse_expr_primary(lexer *lx) {
 			return node;
 		case TOK_LPR:
 			lex_adv(lx);
+			
+			//Check for a cast expression
+			if (is_type_spec(lex_peek(lx))) {
+				lex_unget(lx, make_tok_node(lex_peek(lx)));
+				lex_unget(lx, make_tok_node(t));
+				break;
+			}
+			
 			node = parse_expr(lx);
 			lex_adv(lx); //expect ')'
 			return node;
@@ -1138,7 +1199,7 @@ ast_n *parse_condition(lexer *lx, char *of) {
 	if (lex_peek(lx).type == TOK_RPR) {
 		lex_adv(lx);
 	} else {
-		c_error(&lx->tgt->loc, "Missing '(' after condition body\n");
+		c_error(&lx->tgt->loc, "Missing ')' after condition body\n");
 	}
 
 	return cond;
@@ -1168,6 +1229,7 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 		} else {
 			node = parse_stmt(lx);
 		}
+		if (node == NULL) continue;
 
 		//Add the node to the list
 		if (base == NULL) {
@@ -1178,10 +1240,11 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 
 		//Move to the end of the list
 		//If node already has a next, move to the end of it
-		if (node != NULL)
+		if (node != NULL) {
 			last = node;
-		while (last->next != NULL)
-			last = last->next;
+			while (last->next != NULL)
+				last = last->next;
+		}
 	}
 
 	//Expect '}'

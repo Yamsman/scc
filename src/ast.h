@@ -90,14 +90,13 @@ typedef struct AST_NODE {
 			struct AST_NODE *block; //stmt
 			struct AST_NODE *next; //decl
 		} decl;
-
 		struct AST_EXPR {
 			int kind;
+			struct TYPE *type;
 			struct SYMBOL *sym;
 			struct AST_NODE *left; //expr
 			struct AST_NODE *right; //expr
 		} expr;
-
 		struct AST_STMT {
 			int kind;
 			char *lbl;
@@ -116,5 +115,6 @@ typedef struct AST_STMT ast_stmt;
 
 struct AST_NODE *astn_new(int kind, int s_kind, token t);
 void astn_del(struct AST_NODE *node);
+s_type *astn_type(ast_n *node);
 
 #endif

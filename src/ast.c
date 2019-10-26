@@ -36,6 +36,8 @@ void astn_del(ast_n *node) {
 			astn_del(node->dat.decl.next);
 			break;
 		case EXPR:
+			if (node->dat.expr.type != NULL)
+				type_del(node->dat.expr.type);
 			astn_del(node->dat.expr.left);
 			astn_del(node->dat.expr.right);
 			break;
