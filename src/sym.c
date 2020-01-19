@@ -178,6 +178,27 @@ s_type *type_new(int kind) {
 	return type;
 }
 
+void type_del(s_type *t) {
+	//Reference data
+	if (t->ref != NULL)
+		type_del(t->ref);
+
+	//Function/struct data
+	for (int i=0; i<t->param.len; i++) {
+		if (t->kind == TYPE_FUNC) {
+			param_del(t->param.table[i]);
+		} else {
+			memb_del(t->param.table[i]);
+		}
+	}
+	vector_close(&t->param);
+	if (t->ret != NULL)
+		type_del(t->ret);
+
+	free(t);
+	return;
+}
+
 s_type *type_clone(s_type *from) {
 	s_type *type = malloc(sizeof(struct TYPE));
 	*type = *from;
@@ -222,25 +243,34 @@ int type_compare(s_type *a, s_type *b) {
 	return 1;
 }
 
-void type_del(s_type *t) {
-	//Reference data
-	if (t->ref != NULL)
-		type_del(t->ref);
-
-	//Function/struct data
-	for (int i=0; i<t->param.len; i++) {
-		if (t->kind == TYPE_FUNC) {
-			param_del(t->param.table[i]);
-		} else {
-			memb_del(t->param.table[i]);
-		}
+int type_sizeof(s_type *t) {
+	//Base types
+	switch (t->kind) {
+		case TYPE_UNDEF:
+		case TYPE_MACRO:
+		case TYPE_LABEL:
+			return -1;
+		case TYPE_PTR:	
+		case TYPE_FUNC:	
+			return 8;
+		case TYPE_VOID:
+			return -1;
+		case TYPE_INT:
+		case TYPE_FLOAT:
+			return t->size;
 	}
-	vector_close(&t->param);
-	if (t->ret != NULL)
-		type_del(t->ret);
 
-	free(t);
-	return;
+	//User-defined types
+	int ssum = 0;
+	int smax = 0;
+	for (int i=0; i<t->param.len; i++) {
+		int msize = type_sizeof(t->param.table[i]);
+		ssum += msize;
+		if (msize > smax) smax = msize;
+	}
+	if (t->kind == TYPE_UNION)
+		return smax;
+	return ssum;
 }
 
 s_param *param_new(s_type *type, char *name) {

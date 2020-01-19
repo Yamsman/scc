@@ -9,6 +9,8 @@
 #include "ppd.h"
 #include "util/map.h"
 
+//goto num_case temporarily disabled for positive and negative signs preceeding a digit
+
 map kw_table;
 void init_kwtable() {
 	map_init(&kw_table, 40);
@@ -401,7 +403,7 @@ reset:	tgt = lx->tgt;
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
 		case '+':
-			if (isdigit(*cur)) goto num_case;
+			//if (isdigit(*cur)) goto num_case;
 			t.type = TOK_ADD;
 			if (*cur == '=') {
 				cur++, t.type = TOK_ASSIGN_ADD;
@@ -410,7 +412,7 @@ reset:	tgt = lx->tgt;
 			}
 			break;
 		case '-':
-			if (isdigit(*cur)) goto num_case;
+			//if (isdigit(*cur)) goto num_case;
 			t.type = TOK_SUB;
 			if (*cur == '=') {
 				cur++, t.type = TOK_ASSIGN_SUB;

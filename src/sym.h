@@ -93,14 +93,17 @@ void symtable_def_label(struct SYMTABLE *stb, char *name, struct SRC_POS *loc);
 void symtable_undef(struct SYMTABLE *stb, char *name);
 struct SYMBOL *symtable_search(struct SYMTABLE *stb, char *name);
 
-//Symbol-type helper functions
+//Symbol type functions
 struct SYMBOL *sym_new();
 void sym_del(struct SYMBOL *s);
 struct TYPE *type_new(int kind);
 void type_del(struct TYPE *t);
 struct TYPE *type_clone(struct TYPE *from);
-int type_compare(struct TYPE *a, struct TYPE *b);
 
+int type_compare(struct TYPE *a, struct TYPE *b);
+int type_sizeof(struct TYPE *t);
+
+//Parameter functions
 struct PARAM *param_new();
 void param_del(struct PARAM *p);
 void memb_del(struct PARAM *m);

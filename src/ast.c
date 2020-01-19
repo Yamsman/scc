@@ -202,7 +202,7 @@ s_type *astn_type(ast_n *node) {
 		//Literals
 		case EXPR_CONST:
 		case EXPR_STR:
-			return type_clone(node->dat.expr.type);
+			return type_clone(node->tok.dtype);
 	}
 	return NULL;
 }
