@@ -91,12 +91,12 @@ void gen_expr_cmp(asm_f *f, ast_n *n) {
 
 	//Generate RHS into RAX, pop LHS into register for comparison
 	gen_expr(f, n->dat.expr.right);
-	asmf_add_inst(f, mk_inst(INST_POP, 1, mk_oprd(OPRD_REG, RBX)));
+	asmf_add_inst(f, mk_inst(INST_POP, 1, mk_oprd(OPRD_REG, RCX)));
 
 	//Compare the two results and set EAX based on comparison type
 	asmf_add_inst(f, mk_inst(INST_CMP, 2,
 		mk_oprd(OPRD_REG, RAX),
-		mk_oprd(OPRD_REG, RBX)
+		mk_oprd(OPRD_REG, RCX)
 	));
 	asmf_add_inst(f, mk_inst(set_i, 1, mk_oprd(OPRD_REG, AL)));
 	asmf_add_inst(f, mk_inst(INST_MOVZX, 2,
@@ -170,31 +170,62 @@ void gen_expr_array(asm_f *f, ast_n *n) {
 }
 
 void gen_expr_call(asm_f *f, ast_n *n) {
-	/*
-	symbol *fsym = n->dat.decl.sym;
+	ast_n *func = n->dat.expr.left;
+	ast_n *arg = n->dat.expr.right;
+	char *fname = (func->dat.expr.sym->name != NULL) ? func->dat.expr.sym->name : "(unknown)";
 
-	//Push args to stack
-	vector params = fsym->type->param;
-	ast_n *arg = n->dat.expr.left;
-	for (int i=params.len-1; i>=0; i++) {
-		symbol *psym = params.table[i];	//Symbol of defined parameter
-		symbol *asym = arg->dat.expr.left->dat.expr.sym; //Symbol of call arg
+	//Get type of function
+	s_type *ftype = astn_type(func);
+	vector params = ftype->param;
+
+	//Count arguments passed to function
+	int arg_count = 0;
+	ast_n *cur = arg;
+	while (cur != NULL) {
+		arg_count++;
+		cur = cur->next;
+	}
+	if (arg_count != params.len)
+		c_error(NULL, "Invalid number of arguments to function '%s' (expected %i, got %i)\n",
+			fname, params.len, arg_count);
+
+	//Generate arguments
+	//Place values in registers first, then push the remaining args
+	static int arg_reg[8] = {RDI, RSI, RDX, RCX, R8, R9, R10, R11};
+	for (int i=params.len-1; i>=0; i--) {
+		//Only check types within the bounds of parameter table/argument list
+		if (arg == NULL) break;
+
+		//Get types for each argument
+		s_type *ptype = ((symbol*)params.table[i])->type; //Type of defined parameter
+		s_type *atype = astn_type(arg);			  //Type of call arg
 
 		//Check types
-		if (psym->type->kind != asym->type->kind)
-			c_error(NULL, "Mismatching types in function call\n");
+		if (ptype->kind != atype->kind)
+			c_error(NULL, "Mismatching type for argument %i of function call '%s'\n",
+				i+1, fname);
 
 		//Generate the expression
 		gen_expr(f, arg);
 
-		//Push the argument
+		//If the argument's number is greater than 8, push it
+		//Otherwise, place it in a register
+		if (i >= 8) {
+			asmf_add_inst(f, mk_inst(INST_PUSH, 1,
+				mk_oprd(OPRD_REG, RAX)
+			));
+		} else {
+			asmf_add_inst(f, mk_inst(INST_MOV, 2,
+				mk_oprd(OPRD_REG, arg_reg[i]),
+				mk_oprd(OPRD_REG, RAX)
+			));
+		}
 		
 		arg = arg->next;
 	}
 
-	//call function
+	//Generate the call
 	return;
-	*/
 }
 
 void gen_expr_immd(asm_f *f, ast_n *n) {
@@ -428,7 +459,7 @@ void gen_stmt_return(asm_f *f, ast_n *n) {
 
 void gen_stmt(asm_f *f, ast_n *n) {
 	switch (n->dat.stmt.kind) {
-		case STMT_EXPR:   gen_expr(f, n);		break;
+		case STMT_EXPR:   gen_expr(f, n->dat.stmt.expr);break;
 		case STMT_CMPD:   gen_stmt_cmpd(f, n); 		break;
 		case STMT_IF: 	  gen_stmt_if(f, n);		break;
 		case STMT_SWITCH: gen_stmt_switch(f, n);	break;
@@ -491,9 +522,9 @@ void gen_fdef(asm_f *f, ast_n *n) {
 	//Calculate local variable area size
 	int vsize = 0;
 	for (int i=0; i<fsym->lvars.len; i++) {
-		vsize += 8; //temporary
+		symbol *var = fsym->lvars.table[i];
+		vsize += type_sizeof(var->type);
 	}
-
 	if (vsize > 0) {
 		asmf_add_inst(f, mk_inst(INST_SUB, 2,
 			mk_oprd(OPRD_REG, RSP),

@@ -23,8 +23,8 @@ vector parse_fparam_list(lexer *lx);
 ast_n *parse_fdef(lexer *lx);
 
 vector parse_smemb(lexer *lx);
-s_type *parse_sdef(lexer *lx);
-s_type *parse_edef(lexer *lx);
+void parse_sdef(lexer *lx, s_type *type);
+void parse_edef(lexer *lx);
 s_type *parse_tdef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
@@ -174,50 +174,134 @@ ast_n *parse_decl(lexer *lx) {
 s_type *parse_decl_spec(lexer *lx) {
 	s_type *type = type_new(TYPE_UNDEF);
 
+	/*
+	 * Loop and process specifiers
+	 */
+	int is_long = 0, is_signed = 0, is_unsigned = 0;
 	s_pos begin = lex_peek(lx).loc;
 	for (;;) {
 		token t = lex_peek(lx);
+
+		//Check for conflicts
 		switch (t.type) {
-			case TOK_KW_VOID:
-			case TOK_KW_CHAR:
-			case TOK_KW_SHORT:
-			case TOK_KW_INT:
-			case TOK_KW_LONG:
-			case TOK_KW_FLOAT:
-			case TOK_KW_DOUBLE:
+			case TOK_KW_VOID: case TOK_KW_CHAR: case TOK_KW_SHORT:
+			case TOK_KW_INT: case TOK_KW_FLOAT: case TOK_KW_DOUBLE:
+			case TOK_KW_STRUCT: case TOK_KW_UNION: case TOK_KW_ENUM:
 				if (type->kind != TYPE_UNDEF) {
 					c_error(&t.loc, "Multiple data types in declaration\n");
 				}
-				type->kind = (t.type - TOK_KW_VOID) + TYPE_VOID;
 				break;
-			case TOK_KW_EXTERN:
-			case TOK_KW_STATIC:
-			case TOK_KW_AUTO:
-			case TOK_KW_REGISTER:
-			case TOK_KW_TYPEDEF:
+			case TOK_KW_EXTERN: case TOK_KW_STATIC: case TOK_KW_AUTO:
+			case TOK_KW_REGISTER: case TOK_KW_TYPEDEF:
 				if (type->s_class != CLASS_UNDEF) {
 					c_error(&t.loc, "Multiple storage classes in declaration\n");
 				}
-				type->s_class = (t.type - TOK_KW_EXTERN) + CLASS_EXTERN;
+				break;
+			case TOK_KW_SIGNED:
+				if (is_signed > 0)
+					c_error(&t.loc, "Duplicate 'signed' qualifier\n");
+				break;
+			case TOK_KW_UNSIGNED:
+				if (is_unsigned > 0)
+					c_error(&t.loc, "Duplicate 'unsigned' qualifier\n");
+				break;
+			case TOK_KW_CONST:
+				if (type->is_const == 1)
+					c_error(&t.loc, "Duplicate 'const' qualifier\n");
+				break;
+			case TOK_KW_VOLATILE:
+				if (type->is_volatile == 1)
+					c_error(&t.loc, "Duplicate 'volatile' qualifier\n");
+				break;
+		} 
+
+		//Process specifier
+		switch (t.type) {
+			case TOK_KW_VOID: 	type->kind = TYPE_VOID; break;
+			case TOK_KW_CHAR: 	type->kind = TYPE_INT; type->size = 1; break;
+			case TOK_KW_SHORT: 	type->kind = TYPE_INT; type->size = 2; break;
+			case TOK_KW_FLOAT:	type->kind = TYPE_FLOAT; type->size = 4; break;
+			case TOK_KW_EXTERN:	type->s_class = CLASS_EXTERN;	break;
+			case TOK_KW_STATIC:	type->s_class = CLASS_STATIC;	break;
+			case TOK_KW_AUTO:	type->s_class = CLASS_AUTO; 	break;
+			case TOK_KW_REGISTER:	type->s_class = CLASS_REGISTER;	break;
+			case TOK_KW_TYPEDEF:	type->s_class = CLASS_TYPEDEF;	break;
+			case TOK_KW_SIGNED:	type->is_signed = 1;		break;
+			case TOK_KW_UNSIGNED:	type->is_signed = 0;		break;
+			case TOK_KW_CONST:	type->is_const = 1;		break;
+			case TOK_KW_VOLATILE:	type->is_volatile = 1;		break;
+			case TOK_KW_INT: 	
+				if (is_long == 0 || is_long == 1)
+					type->size = 4;
+				else if (is_long == 2)
+					type->size = 8;
+				else
+					c_error(&t.loc, "Too many 'long' for data type 'int'\n");
+				type->kind = TYPE_INT;
+				break;
+			case TOK_KW_DOUBLE:
+				if (is_long == 0)
+					type->size = 8;
+				else if (is_long == 1)
+					type->size = 16;
+				else
+					c_error(&t.loc, "Too many 'long' for data type 'double'\n");
+				type->kind = TYPE_FLOAT;
+				break;
+			case TOK_KW_LONG:
+				//Either set the data type to int, or modify the current type
+				if (type->kind == TYPE_UNDEF) {
+					type->size = 4;
+					if (is_long > 0)
+						type->size = 8;
+				} else if (type->kind == TYPE_INT) {
+					if (is_long == 1)
+						type->size = 8;
+					else if (is_long > 1)
+						c_error(&t.loc,
+							"Too many 'long' for data type 'int'\n");
+				} else if (type->kind == TYPE_FLOAT && type->size == 8) {
+					if (is_long == 0)
+						type->size = 16;
+					else if (is_long > 0)
+						c_error(&t.loc,
+							"Too many 'long' for data type 'double'\n");
+				} else {
+					c_error(&t.loc, "Invalid use of 'long'\n");
+				}
+				is_long++;
 				break;
 			case TOK_KW_STRUCT:
 			case TOK_KW_UNION:
-				type_del(type);
-				return parse_sdef(lx);
+				parse_sdef(lx, type);
+				lex_unget(lx, make_tok_node(lex_peek(lx)));
+				break;
 			case TOK_KW_ENUM:
-				type_del(type);
-				return parse_edef(lx);
+				parse_edef(lx);
+				break;
 			default:
-				return type;
+				goto ts_end;
 		}
 		lex_adv(lx);
 	}
 
-	//No type kind
-	if (type->kind == TYPE_UNDEF) {
-		c_warn(&begin, "Declaration defaults to 'int'\n");
+	/*
+	 * Error checking
+	 */
+	//Warning for no specified data type (unless 'long' is specified)
+ts_end:	if (type->kind == TYPE_UNDEF) {
+		if (is_long == 0)
+			c_warn(&begin, "Declaration defaults to 'int'\n");
+		if (is_long > 2)
+			c_error(&begin, "Too many 'long' for data type 'int'\n");
 		type->kind = TYPE_INT;
 	}
+
+	//Ensure signed/unsigned is only used with integer data types
+	if (is_signed == 1 && type->kind != TYPE_INT)
+		c_error(&begin, "Improper usage of 'signed' qualifier\n");
+	if (is_unsigned == 1 && type->kind != TYPE_INT)
+		c_error(&begin, "Improper usage of 'unsigned' qualifier\n");
 
 	return type;
 }
@@ -468,17 +552,16 @@ vector parse_sdef_body(lexer *lx) {
 
 //Parse a struct type
 //TODO: s_param -> s_memb
-s_type *parse_sdef(lexer *lx) {
-	s_type *type = NULL;
+void parse_sdef(lexer *lx, s_type *type) {
 	switch (lex_peek(lx).type) {
 		case TOK_KW_STRUCT:
-			type = type_new(TYPE_STRUCT);
+			type->kind = TYPE_STRUCT;
 			break;
 		case TOK_KW_UNION:
-			type = type_new(TYPE_UNION);
+			type->kind = TYPE_UNION;
 			break;
 		default:
-			return NULL;
+			return;
 	}
 	lex_adv(lx);
 
@@ -504,7 +587,7 @@ s_type *parse_sdef(lexer *lx) {
 	if (tname == NULL) {
 		if (type->param.len == VECTOR_EMPTY) {
 			c_error(&aloc, "Expected '{' or identifier before ...\n");
-			return NULL;
+			return;
 		} 
 	} else {
 		symbol *s = NULL;
@@ -515,7 +598,7 @@ s_type *parse_sdef(lexer *lx) {
 			if (s == NULL) {
 				c_error(&nloc, "Undefined struct '%s'\n", tname);
 				free(tname);
-				return NULL;
+				return;
 			}
 			free(tname);
 			type = s->type;
@@ -524,7 +607,7 @@ s_type *parse_sdef(lexer *lx) {
 		}
 	}
 
-	return type;
+	return;
 }
 
 //Parses a single enumeration
@@ -558,8 +641,7 @@ void parse_enum(lexer *lx, int *val) {
 }
 
 //Parse an enum type
-s_type *parse_edef(lexer *lx) {
-	s_type *type = NULL;
+void parse_edef(lexer *lx) {
 	lex_adv(lx);
 
 	//Read identifier if available
@@ -599,7 +681,7 @@ s_type *parse_edef(lexer *lx) {
 		}
 	}
 
-	return type;
+	return;
 }
 
 s_type *parse_tdef(lexer *lx) {
@@ -1015,7 +1097,6 @@ ast_n *parse_expr_arglist(lexer *lx) {
 	return head;
 }
 
-//TODO: implement dereference & member access
 ast_n *parse_expr_postfix(lexer *lx) {
 	ast_n *node = parse_expr_primary(lx);
 
@@ -1061,6 +1142,7 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			if (t.type != TOK_RPR)
 				c_error(&t.loc, "Missing ')' after parameter list\n");
 			lex_adv(lx);
+			s_type *type = astn_type(n_node);
 
 			return n_node;
 		case TOK_PRD:
@@ -1077,8 +1159,7 @@ ast_n *parse_expr_postfix(lexer *lx) {
 			n_node->dat.expr.left = node;
 			n_node->dat.expr.right = astn_new(EXPR, EXPR_IDENT, t);
 			lex_adv(lx);
-
-			break;
+			return n_node;
 		case TOK_INC:
 			n_node = astn_new(EXPR, EXPR_INC_POST, t);
 			n_node->dat.expr.left = node;
