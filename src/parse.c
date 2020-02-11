@@ -17,6 +17,7 @@ ast_n *parse_decl(lexer *lx);
 s_type *parse_decl_spec(lexer *lx);
 s_type *parse_decltr(lexer *lx, s_type *type, token *vname);
 ast_n *parse_decl_body(lexer *lx, s_type *type);
+ast_n *parse_decl_init(lexer *lx);
 
 s_param *parse_fparam(lexer *lx);
 vector parse_fparam_list(lexer *lx);
@@ -55,7 +56,6 @@ ast_n *parse_stmt_label(lexer *lx);
 ast_n *parse_stmt_jump(lexer *lx);
 
 ast_n *parse(lexer *lx) {
-	//TODO: rewrite
 	ast_n *list = NULL; // = parse_stmt();
 	ast_n *cur = NULL;
 	while (lex_peek(lx).type != TOK_END) {
@@ -405,7 +405,6 @@ s_type *parse_decltr(lexer *lx, s_type *type, token *vname) {
 	return parse_decltr_back(lx, type);
 }
 
-//TODO: split into parse_decl_decltr and parse_decl_init
 ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	//Parse declarator
 	token vname = {0}; 
@@ -429,7 +428,60 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	//Check for and parse initialization
 	if (lex_peek(lx).type == TOK_ASSIGN) {
 		lex_adv(lx);
-		decl_n->init = parse_expr_assign(lx);
+		decl_n->init = parse_decl_init(lx, node);
+	}
+
+	return node;
+}
+
+//Parse an initialization designation
+ast_n *parse_init_desi(lexer *lx) {
+	
+}
+
+//Parses a list of initializations
+ast_n *parse_init_list(lexer *lx) {
+	ast_n *list = NULL;
+	ast_n *cur = NULL;
+
+	//Parse first initialization
+	
+
+	//Parse subsequent elements
+	while (lex_peek(lx).type != TOK_RBR) {
+		//Check for premature end of input
+		if (lex_peek(lx).type == TOK_END) {
+			return NULL;
+		}
+	}
+
+	return list;
+}
+
+//Parse an initializer for a given object
+ast_n *parse_decl_init(lexer *lx, ast_n *obj) {
+	ast_n *node;
+	if (lex_peek(lx).type == TOK_LBR) {
+		//Read initializer list
+		token lbr = lex_peek(lx);
+		lex_adv(lx);
+		node = parse_init_list(lx);
+
+		//Optional ',' after list
+		if (lex_peek(lx).type == TOK_CMM)
+			lex_adv(lx);
+
+		//Expect '}'
+		token rbr = lex_peek(lx);
+		if (rbr.type == TOK_RBR) {
+			lex_adv(lx);
+		} else if (rbr.type == TOK_END) {
+			c_error(&lbr.loc, "Unexpected end of input in initializer\n");
+		} else {
+			c_error(&rbr.loc, "Expected '}' after initializer list\n");
+		}
+	} else {
+		node = parse_expr_assign(lx);
 	}
 
 	return node;

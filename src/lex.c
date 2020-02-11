@@ -434,7 +434,7 @@ reset:	tgt = lx->tgt;
 			if (*cur == '=') {
 				cur++, t.type = TOK_ASSIGN_DIV;
 			} else if (*cur == '/') {
-				//C++ style comments
+				//C style comments
 				for (;;) {
 					if (*cur == '\n') {
 						tgt->pos = cur;
@@ -446,7 +446,7 @@ reset:	tgt = lx->tgt;
 					cur++;
 				}
 			} else if (*cur == '*') {
-				//C style comments
+				//C++ style comments
 				for (;;) {
 					if (*cur == '*' && *(cur+1) == '/') {
 						cur += 2;
@@ -456,6 +456,9 @@ reset:	tgt = lx->tgt;
 						c_error(loc, "Unterminated comment\n");
 						t.type = TOK_END;
 						goto end;
+					} else if (*cur == '\n') {
+						loc->col = 0;
+						loc->line++;
 					}
 					cur++;
 				}
