@@ -88,6 +88,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 	n_tgt->type = type;
 	n_tgt->buf = buf;
 	n_tgt->pos = buf;
+	n_tgt->cch = *buf;
 
 	//Copy location for macro
 	if (type == TGT_MACRO) {
@@ -130,6 +131,54 @@ void lexer_del_cond(lexer *lx) {
 	return;
 }
 
+//Returns the current character
+char lex_cur(lexer *lx) {
+	return lx->tgt->cch;
+}
+
+//Returns the next character
+//If not NULL, the integer pointed to by len will be set to the number of characters processed
+//If not NULL, the struct pointed to by nloc will be set to the resultant source location
+char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
+	//If the end of input has already been reached, do not attempt to look further
+	s_pos loc = lx->tgt->loc;
+	if (lx->tgt->cch == '\0') {
+		if (len != NULL) *len = 0;
+		if (nloc != NULL) *nloc = loc;
+		return '\0';
+	}
+
+	//Move to the next character
+	char *cur = lx->tgt->pos+1;
+	while (*cur == '\\' && *(cur+1) == '\n') {
+		cur += 2;
+		loc.col += 2;
+		loc.line++;
+	}
+
+	//Update location
+	if (*cur == '\n') {
+		loc.col = 0;
+		loc.line++;
+	}
+	loc.col++;
+	
+	//Update external values if applicable and return the next character
+	if (len != NULL) *len = cur - lx->tgt->pos;
+	if (nloc != NULL) *nloc = loc;
+	return *cur;
+}
+
+//Advances the lexer by one character
+void lex_adv_char(lexer *lx) {
+	int len; s_pos loc;
+	lx->tgt->cch = lex_nchar(lx, &len, &loc);
+	lx->tgt->pos += len;
+	lx->tgt->loc = loc;
+	return;
+}
+
+//Reads an identifier
 int lex_ident(lexer *lx, token *t) {
 	char *cur = lx->tgt->pos;
 	if (!isalpha(*cur) && *cur != '_') return 0;
@@ -374,6 +423,12 @@ reset:	tgt = lx->tgt;
 		case '[':	t.type = TOK_LBK;	break;
 		case ']':	t.type = TOK_RBK;	break;
 		case '\'': 	t.type = TOK_SQT; 	break;
+		case '\\':
+			if (*cur == '\n') {
+				tgt->pos = cur;
+				goto reset;
+			}
+			break;
 		case '"':
 			//TODO: whitespace concatenation
 			t.type = TOK_STR;

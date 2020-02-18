@@ -101,6 +101,7 @@ typedef struct LEX_TARGET {
 	int type;			//File or macro
 	char *buf;			//Beginning of buffer
 	char *pos;			//Current position in buffer
+	char cch;			//The current character, after preprocessing
 	struct SRC_POS loc;		//Current location in file
 	struct LEX_TARGET *prev;	//Pointer to previous target
 } lex_target;
@@ -133,12 +134,19 @@ void lexer_tgt_close(struct LEXER *lx);
 void lexer_add_cond(struct LEXER *lx, int pass);
 void lexer_del_cond(struct LEXER *lx);
 
-//Used internally by lexer/preprocessor
+//Used internally to process individual characters
+char lex_cur(struct LEXER *lx);
+char lex_nchar(struct LEXER *lx, int *len, struct SRC_POS *loc);
+void lex_adv_char(struct LEXER *lx);
+
+//Used internally for processing tokens
 void lex_next(struct LEXER *lx, int m_exp);
 int lex_ident(struct LEXER *lx, struct TOKEN *t);
+int lex_num(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
 int lex_expand_macro(struct LEXER *lx, struct TOKEN t);
 
+//Used externally to control the lexer
 struct TOKEN lex_peek(struct LEXER *lx);
 void lex_adv(struct LEXER *lx);
 void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);

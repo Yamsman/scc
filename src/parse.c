@@ -428,7 +428,7 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	//Check for and parse initialization
 	if (lex_peek(lx).type == TOK_ASSIGN) {
 		lex_adv(lx);
-		decl_n->init = parse_decl_init(lx, node);
+		//decl_n->init = parse_decl_init(lx, node);
 	}
 
 	return node;
@@ -459,7 +459,7 @@ ast_n *parse_init_list(lexer *lx) {
 }
 
 //Parse an initializer for a given object
-ast_n *parse_decl_init(lexer *lx, ast_n *obj) {
+ast_n *parse_decl_init(lexer *lx) {
 	ast_n *node;
 	if (lex_peek(lx).type == TOK_LBR) {
 		//Read initializer list
