@@ -200,8 +200,13 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 	return nchar;
 }
 
+//Looks ahead by one character but does not advance the lexer
+char lex_peekc(lexer *lx) {
+	return lex_nchar(lx, NULL, NULL);
+}
+
 //Advances the lexer by one character
-char lex_adv_char(lexer *lx) {
+char lex_advc(lexer *lx) {
 	int len; s_pos loc;
 	lx->tgt->cch = lex_nchar(lx, &len, &loc);
 	lx->tgt->pos += len;
@@ -211,6 +216,7 @@ char lex_adv_char(lexer *lx) {
 
 //Reads an identifier
 void lex_ident(lexer *lx, token *t) {
+	int len = 0;
 	int bsize = 256;
 	char cur = lex_cur(lx);
 	char *buf = malloc(bsize);
@@ -223,7 +229,7 @@ void lex_ident(lexer *lx, token *t) {
 
 		//Copy character to buffer
 		buf[len++] = cur;
-		cur = lex_adv_char(lx);
+		cur = lex_advc(lx);
 	}
 	buf[len] = '\0';
 	t->dat.sval = buf;
@@ -246,22 +252,22 @@ void lex_num(lexer *lx, token *t) {
 	int sign = 1;
 	if (cur == '-' || cur == '+') {
 		sign = (cur == '-') ? -1 : 1;
-		cur = lex_adv_char(lx);
+		cur = lex_advc(lx);
 	}
 
 	//Read base prefix
 	int base = 10;
-	if (cur == '0' && isalnum(lex_nchar(lx, NULL, NULL))) {
+	if (cur == '0' && isalnum(lex_peekc(lx))) {
 		base = 8;
-		char nextc = tolower(lex_nchar(lx, NULL, NULL));
+		char nextc = tolower(lex_peekc(lx));
 		switch (nextc) {
 			case 'x': case 'X':
 				base = 16;
-				lex_adv_char(lx);
+				lex_advc(lx);
 				break;
 			case 'b': case 'B':
 				base = 2;
-				lex_adv_char(lx);
+				lex_advc(lx);
 				break;
 			default:
 				if (!isdigit(nextc)) {
@@ -269,7 +275,7 @@ void lex_num(lexer *lx, token *t) {
 				}
 				break;
 		}
-		lex_adv_char(lx);
+		lex_advc(lx);
 	}
 
 	//Read number
@@ -279,7 +285,7 @@ void lex_num(lexer *lx, token *t) {
 	unsigned long long frac_val = 0;
 	unsigned long long exp_val = 0;
 	unsigned long long *tgt_val = &int_val;
-	for (;; cur = lex_adv_char(lx)) {
+	for (;; cur = lex_advc(lx)) {
 		char digit = tolower(cur);
 		int dval = digit - '0';
 
@@ -361,7 +367,7 @@ n_end:  if (dec_state != S_NONE && base != 10)
 				break;
 			default: goto s_end;
 		}
-		cur = lex_adv_char(lx);
+		cur = lex_advc(lx);
 	}
 
 	//Suffix verification
@@ -399,6 +405,46 @@ s_err:	c_error(&suffix_loc, "Invalid suffix on constant\n");
 	goto s_end;
 }
 
+//Reads a quotation-enclosed string
+void lex_str(lexer *lx, token *t) {
+	int len = 0;
+	int bsize = 256;
+	char cur = lex_advc(lx);
+	char *buf = malloc(bsize);
+	for (;;) {
+		//Resize if needed
+		if (len+2 == bsize) {
+			bsize *= 2;
+			buf = realloc(buf, bsize);
+		}
+
+		//Get character
+		char c = cur;
+		if (cur == '"') {
+			lex_advc(lx);
+	
+			//Check for whitespace concatenation
+			while (isspace(lex_cur(lx))) lex_advc(lx);
+			if (lex_cur(lx) != '"') break;
+			cur = lex_advc(lx);
+			continue;
+		} else if (cur == '\\') {
+			//Escape sequence
+			//cur++;
+			//continue;
+		}
+
+		//Copy character to buffer
+		buf[len++] = c;
+		cur = lex_advc(lx);
+
+	}
+	buf[len] = '\0';
+	t->dat.sval = buf;
+	t->type = TOK_STR;
+	return;
+}
+
 //Processes the next token
 //If m_exp is nonzero, macros will be expanded
 void lex_next(lexer *lx, int m_exp) {
@@ -425,11 +471,13 @@ reset:	tgt = lx->tgt;
 	t.nline = nline;
 	t.loc = *loc;
 
-	//Get next char
-	int len;
-	char *begin = tgt->pos;
-	char *cur = begin;
-	switch (*(cur++)) {
+	//int len;
+	//char *begin = tgt->pos;
+	//char *cur = begin;
+
+	//Process the next character
+	//The odd switch condition is equivalent to the old *(cur++)
+	switch (lex_cur(lx)) {
 		case '\0':
 			//End lexing if end has been reached
 			//Otherwise, go to previous target
@@ -444,8 +492,8 @@ reset:	tgt = lx->tgt;
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ':':	t.type = TOK_COL;	break;
 		case ',':	t.type = TOK_CMM; 	break;
-		case '.':	
-			if (isdigit(*cur)) goto num_case;
+		case '.':
+			if (isdigit(lex_peekc(lx))) goto num_case;
 			t.type = TOK_PRD; 
 			break;
 		case '{':	t.type = TOK_LBR; 	break;
@@ -455,35 +503,12 @@ reset:	tgt = lx->tgt;
 		case '[':	t.type = TOK_LBK;	break;
 		case ']':	t.type = TOK_RBK;	break;
 		case '\'': 	t.type = TOK_SQT; 	break;
-		case '\\':
-			if (*cur == '\n') {
-				tgt->pos = cur;
-				goto reset;
-			}
-			break;
-		case '"':
-			//TODO: whitespace concatenation
-			t.type = TOK_STR;
-			for (;;cur++) {
-				if (*cur == '"') {
-					break;
-				} else if (*cur == '\\') {
-					//TODO: escape sequences
-					cur++;
-					continue;
-				}
-			}
-			
-			len = cur - (begin+1);
-			t.dat.sval = malloc(len+1);
-			memcpy(t.dat.sval, (begin+1), len);
-			t.dat.sval[len] = '\0';
-			cur++;
-			break;
+		case '"':	lex_str(lx, &t);	break;
 		case '#':
 			t.type = TOK_SNS;
-			if (*cur == '#') {
-				cur++, t.type = TOK_DNS;
+			if (lex_peekc(lx) == '#') {
+				lex_advc(lx);
+				t.type = TOK_DNS;
 			} else if (!nline && loc->col != 1) {
 				c_error(loc, "Stray '#' in source\n");
 			}
@@ -492,91 +517,101 @@ reset:	tgt = lx->tgt;
 		case '+':
 			//if (isdigit(*cur)) goto num_case;
 			t.type = TOK_ADD;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_ADD;
-			} else if (*cur == '+') {
-				cur++, t.type = TOK_INC;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_ADD;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '+') {
+				t.type = TOK_INC;
+				lex_advc(lx);
 			}
 			break;
 		case '-':
 			//if (isdigit(*cur)) goto num_case;
 			t.type = TOK_SUB;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_SUB;
-			} else if (*cur == '-') {
-				cur++, t.type = TOK_DEC;
-			} else if (*cur == '>') {
-				cur++, t.type = TOK_PTR;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_SUB;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '-') {
+				t.type = TOK_DEC;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '>') {
+				t.type = TOK_PTR;
+				lex_advc(lx);
 			}
-
 			break;
 		case '*':
 			t.type = TOK_ASR;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_MUL;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_MUL;
+				lex_advc(lx);
 			}
 			break;
 		case '/': 
 			t.type = TOK_DIV;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_DIV;
-			} else if (*cur == '/') {
-				//C style comments
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_DIV;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '/') {
+				//C++ style comments
+				lex_advc(lx); lex_advc(lx);
 				for (;;) {
-					if (*cur == '\n') {
-						tgt->pos = cur;
+					if (lex_cur(lx) == '\n') {
+						//tgt->pos = cur;
 						goto reset;
-					} else if (*cur == '\0') {
+					} else if (lex_cur(lx) == '\0') {
 						t.type = TOK_END;
 						goto end;
 					}
-					cur++;
+					lex_advc(lx);
 				}
-			} else if (*cur == '*') {
-				//C++ style comments
+			} else if (lex_peekc(lx) == '*') {
+				//C style comments
+				lex_advc(lx); lex_advc(lx);
 				for (;;) {
-					if (*cur == '*' && *(cur+1) == '/') {
-						cur += 2;
-						tgt->pos = cur;
+					if (lex_cur(lx) == '*' && lex_peekc(lx) == '/') {
+						lex_advc(lx); lex_advc(lx);
 						goto reset;
-					} else if (*cur == '\0') {
+					} else if (lex_cur(lx) == '\0') {
 						c_error(loc, "Unterminated comment\n");
 						t.type = TOK_END;
 						goto end;
-					} else if (*cur == '\n') {
-						loc->col = 0;
-						loc->line++;
 					}
-					cur++;
+					lex_advc(lx);
 				}
 			}
 			break;
 		case '%':
 			t.type = TOK_MOD;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_MOD;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_MOD;
+				lex_advc(lx);
 			}
 			break;
 		case '&':
 			t.type = TOK_AND;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_AND;
-			} else if (*cur == '&') {
-				cur++, t.type = TOK_LOGIC_AND;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_AND;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '&') {
+				t.type = TOK_LOGIC_AND;
+				lex_advc(lx);
 			}
 			break;
 		case '|':
 			t.type = TOK_OR;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_OR;
-			} else if (*cur == '|') {
-				cur++, t.type = TOK_LOGIC_OR;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_OR;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '|') {
+				t.type = TOK_LOGIC_OR;
+				lex_advc(lx);
 			}
 			break;
 		case '^':
 			t.type = TOK_XOR;
-			if (*cur == '=') {
-				cur++, t.type = TOK_ASSIGN_XOR;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_ASSIGN_XOR;
+				lex_advc(lx);
 			}
 			break;
 		case '~':
@@ -584,34 +619,42 @@ reset:	tgt = lx->tgt;
 			break;
 		case '=':
 			t.type = TOK_ASSIGN;
-			if (*cur == '=')
-				cur++, t.type = TOK_EQ;
+			if (lex_peekc(lx) == '=')
+				t.type = TOK_EQ;
+			lex_advc(lx);
 			break;
 		case '!':
 			t.type = TOK_LOGIC_NOT;
-			if (*cur == '=') {
-				cur++, t.type = TOK_NEQ;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_NEQ;
+				lex_advc(lx);
 			}
 			break;
 		case '<':
 			t.type = TOK_LTH;
-			if (*cur == '=') {
-				cur++, t.type = TOK_LEQ;
-			} else if (*cur == '<') {
-				cur++, t.type = TOK_LSHIFT;
-				if (*cur == '=') {
-					cur++, t.type = TOK_ASSIGN_LSHIFT;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_LEQ;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '<') {
+				t.type = TOK_LSHIFT;
+				lex_advc(lx);
+				if (lex_peekc(lx) == '=') {
+					t.type = TOK_ASSIGN_LSHIFT;
+					lex_advc(lx);
 				}
 			}
 			break;
 		case '>':
 			t.type = TOK_GTH;
-			if (*cur == '=') {
-				cur++, t.type = TOK_GEQ;
-			} else if (*cur == '<') {
-				cur++, t.type = TOK_RSHIFT;
-				if (*cur == '=') {
-					cur++, t.type = TOK_ASSIGN_RSHIFT;
+			if (lex_peekc(lx) == '=') {
+				t.type = TOK_GEQ;
+				lex_advc(lx);
+			} else if (lex_peekc(lx) == '<') {
+				t.type = TOK_RSHIFT;
+				lex_advc(lx);
+				if (lex_peekc(lx) == '=') {
+					t.type = TOK_ASSIGN_RSHIFT;
+					lex_advc(lx);
 				}
 			}
 			break;
@@ -628,9 +671,7 @@ reset:	tgt = lx->tgt;
 		case 'U': case 'V': case 'W': case 'X': case 'Y':
 		case 'Z': case '_': {
 			//Read identifier
-			cur--;
-			int len = lex_ident(lx, &t);
-			cur += len;
+			lex_ident(lx, &t);
 
 			//Check if matches keyword
 			//String is not freed yet; could be used as macro name
@@ -652,16 +693,12 @@ reset:	tgt = lx->tgt;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
 			//Read number
-num_case:		cur--;
-			int len = lex_num(lx, &t);
-			cur += len;
+num_case:		lex_num(lx, &t);
 
-			/*
 			if (t.dtype->kind == TYPE_INT)
 				printf("%lld\n", t.dat.ival);
 			else if (t.dtype->kind == TYPE_FLOAT)
 				printf("%lf\n", t.dat.fval);
-			*/
 			//free(t.dtype); //temporary
 			t.type = TOK_CONST;
 			break;
@@ -670,10 +707,8 @@ num_case:		cur--;
 			t.type = TOK_END;
 			break;
 	}
-end:	loc->col += (cur - begin);
-	tgt->pos = cur;
+end:	lex_advc(lx);
 	lx->ahead = t;
-	
 	return;
 }
 
@@ -681,16 +716,10 @@ end:	loc->col += (cur - begin);
 //Returns 1 if a newline is skipped
 int lex_wspace(lexer *lx) {
 	int nline = 0;
-	lex_target *tgt = lx->tgt;
-	s_pos *loc = &tgt->loc;
-	while (isspace(*tgt->pos)) {
-		if (*tgt->pos == '\n') { 
-			nline = 1;
-			loc->col = 0;
-			loc->line++;
-		}
-		tgt->pos++;
-		loc->col++;
+	char cur = lex_cur(lx);
+	while (isspace(cur)) {
+		if (cur == '\n') nline = 1;
+		cur = lex_advc(lx);
 	}
 	return nline;
 }
