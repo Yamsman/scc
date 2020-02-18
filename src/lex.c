@@ -148,25 +148,56 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 		return '\0';
 	}
 
-	//Move to the next character
-	char *cur = lx->tgt->pos+1;
-	while (*cur == '\\' && *(cur+1) == '\n') {
-		cur += 2;
-		loc.col += 2;
-		loc.line++;
-	}
-
 	//Update location
-	if (*cur == '\n') {
+	if (*lx->tgt->pos == '\n') {
 		loc.col = 0;
 		loc.line++;
 	}
 	loc.col++;
+
+	//Move to the next character
+	char *cur = lx->tgt->pos+1;
+	char nchar = *cur;
+	for (;;) {
+		//Process trigraphs
+		if (*cur == '?' && *(cur+1) == '?') {
+			int conv = 1;
+			switch (*(cur+2)) {
+				case '=': nchar = '#';  break;
+				case '(': nchar = '[';  break;
+				case '/': nchar = '\\'; break;
+				case ')': nchar = ']';  break;
+				case '\'': nchar = '^'; break;
+				case '<': nchar = '{';  break;
+				case '!': nchar = '|';  break;
+				case '>': nchar = '}';  break;
+				case '-': nchar = '~';  break;
+				default: conv = 0; break;
+			}
+
+			//A conversion only takes place if the trigram was valid
+			if (conv) {
+				cur += 2;
+				loc.col += 2;
+			}
+		}
+		
+		//Process newline splicing
+		if (nchar == '\\' && *(cur+1) == '\n') {
+			cur += 2;
+			nchar = *cur;
+			loc.col = 1;
+			loc.line++;
+		} else {
+			//Stop looping if a line was not spliced
+			break;
+		}
+	}
 	
 	//Update external values if applicable and return the next character
 	if (len != NULL) *len = cur - lx->tgt->pos;
 	if (nloc != NULL) *nloc = loc;
-	return *cur;
+	return nchar;
 }
 
 //Advances the lexer by one character
