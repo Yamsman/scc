@@ -201,26 +201,34 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 }
 
 //Advances the lexer by one character
-void lex_adv_char(lexer *lx) {
+char lex_adv_char(lexer *lx) {
 	int len; s_pos loc;
 	lx->tgt->cch = lex_nchar(lx, &len, &loc);
 	lx->tgt->pos += len;
 	lx->tgt->loc = loc;
-	return;
+	return lx->tgt->cch;
 }
 
 //Reads an identifier
-int lex_ident(lexer *lx, token *t) {
-	char *cur = lx->tgt->pos;
-	if (!isalpha(*cur) && *cur != '_') return 0;
-	while (isalnum(*cur) || *cur == '_') 
-		cur++;
-	int len = cur - lx->tgt->pos;
-	t->dat.sval = malloc(len+1);
-	memcpy(t->dat.sval, lx->tgt->pos, len);
-	t->dat.sval[len] = '\0';
+void lex_ident(lexer *lx, token *t) {
+	int bsize = 256;
+	char cur = lex_cur(lx);
+	char *buf = malloc(bsize);
+	while (isalnum(cur) || cur == '_') {
+		//Resize if needed
+		if (len+2 == bsize) {
+			bsize *= 2;
+			buf = realloc(buf, bsize);
+		}
+
+		//Copy character to buffer
+		buf[len++] = cur;
+		cur = lex_adv_char(lx);
+	}
+	buf[len] = '\0';
+	t->dat.sval = buf;
 	t->type = TOK_IDENT;
-	return len;
+	return;
 }
 
 //Used for holding state of decimal and exponent
@@ -230,33 +238,30 @@ enum NUM_STATUS {
 	S_DONE	//Decimal/exponent exists and has trailing digits
 };
 
-int lex_num(lexer *lx, token *t) {
-	char *cur = lx->tgt->pos;
+void lex_num(lexer *lx, token *t) {
+	char cur = lex_cur(lx);
 	s_pos *loc = &lx->tgt->loc;
 
 	//Read sign
 	int sign = 1;
-	if (*cur == '-' || *cur == '+') {
-		sign = (*cur == '-') ? -1 : 1;
-		cur++;
-		loc->col++;
+	if (cur == '-' || cur == '+') {
+		sign = (cur == '-') ? -1 : 1;
+		cur = lex_adv_char(lx);
 	}
 
 	//Read base prefix
 	int base = 10;
-	if (*cur == '0' && isalnum(*(cur+1))) {
+	if (cur == '0' && isalnum(lex_nchar(lx, NULL, NULL))) {
 		base = 8;
-		char nextc = tolower(*(cur+1));
+		char nextc = tolower(lex_nchar(lx, NULL, NULL));
 		switch (nextc) {
 			case 'x': case 'X':
 				base = 16;
-				cur++;
-				loc->col++;
+				lex_adv_char(lx);
 				break;
 			case 'b': case 'B':
 				base = 2;
-				cur++;
-				loc->col++;
+				lex_adv_char(lx);
 				break;
 			default:
 				if (!isdigit(nextc)) {
@@ -264,8 +269,7 @@ int lex_num(lexer *lx, token *t) {
 				}
 				break;
 		}
-		cur++;
-		loc->col++;
+		lex_adv_char(lx);
 	}
 
 	//Read number
@@ -275,8 +279,8 @@ int lex_num(lexer *lx, token *t) {
 	unsigned long long frac_val = 0;
 	unsigned long long exp_val = 0;
 	unsigned long long *tgt_val = &int_val;
-	for (;;cur++) {
-		char digit = tolower(*cur);
+	for (;; cur = lex_adv_char(lx)) {
+		char digit = tolower(cur);
 		int dval = digit - '0';
 
 		//Handle floating-point characters
@@ -326,7 +330,6 @@ int lex_num(lexer *lx, token *t) {
 
 		default: goto n_end;
 		}
-		loc->col++;
 	}
 n_end:  if (dec_state != S_NONE && base != 10)
 		c_error(loc, "Decimal point in non-base 10 constant\n");
@@ -344,8 +347,8 @@ n_end:  if (dec_state != S_NONE && base != 10)
 	//Read suffix
 	s_pos suffix_loc = *loc;
 	int l_count = 0, u_count = 0, f_count = 0;
-	while (isalpha(*cur)) {
-		switch (tolower(*cur)) {
+	while (isalpha(cur)) {
+		switch (tolower(cur)) {
 			case 'l': //Long flag
 				l_count++; 
 				break;
@@ -358,8 +361,7 @@ n_end:  if (dec_state != S_NONE && base != 10)
 				break;
 			default: goto s_end;
 		}
-		cur++;
-		loc->col++;
+		cur = lex_adv_char(lx);
 	}
 
 	//Suffix verification
@@ -390,8 +392,7 @@ s_end:	if (ty->kind == TYPE_INT) {
 		if (frac_val != 0) t->dat.fval += dec;
 		t->dat.fval *= pow(10, exp_val);
 	}
-	int len = cur - lx->tgt->pos;
-	return len;
+	return;
 
 	//Suffix error handling
 s_err:	c_error(&suffix_loc, "Invalid suffix on constant\n");

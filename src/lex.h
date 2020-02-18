@@ -137,12 +137,12 @@ void lexer_del_cond(struct LEXER *lx);
 //Used internally to process individual characters
 char lex_cur(struct LEXER *lx);
 char lex_nchar(struct LEXER *lx, int *len, struct SRC_POS *loc);
-void lex_adv_char(struct LEXER *lx);
+char lex_adv_char(struct LEXER *lx);
 
 //Used internally for processing tokens
 void lex_next(struct LEXER *lx, int m_exp);
-int lex_ident(struct LEXER *lx, struct TOKEN *t);
-int lex_num(struct LEXER *lx, struct TOKEN *t);
+void lex_ident(struct LEXER *lx, struct TOKEN *t);
+void lex_num(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
 int lex_expand_macro(struct LEXER *lx, struct TOKEN t);
 
