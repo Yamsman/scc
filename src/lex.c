@@ -422,7 +422,6 @@ void lex_str(lexer *lx, token *t) {
 		char c = cur;
 		if (cur == '"') {
 			lex_advc(lx);
-	
 			//Check for whitespace concatenation
 			while (isspace(lex_cur(lx))) lex_advc(lx);
 			if (lex_cur(lx) != '"') break;
@@ -450,7 +449,7 @@ void lex_str(lexer *lx, token *t) {
 void lex_next(lexer *lx, int m_exp) {
 	token t = {-1, -1, lx->tgt->loc, 0, NULL};
 	lex_target *tgt = lx->tgt;
-	s_pos *loc = &tgt->loc;
+	s_pos loc = tgt->loc;
 
 	//Use ungotten tokens
 	token_n *pre = lx->pre;
@@ -466,17 +465,11 @@ void lex_next(lexer *lx, int m_exp) {
 	//When the lexer is reset (when a new context is created) it begins from here
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
 reset:	tgt = lx->tgt;
-	loc = &tgt->loc;
 	nline |= lex_wspace(lx);
 	t.nline = nline;
-	t.loc = *loc;
-
-	//int len;
-	//char *begin = tgt->pos;
-	//char *cur = begin;
+	loc = tgt->loc;
 
 	//Process the next character
-	//The odd switch condition is equivalent to the old *(cur++)
 	switch (lex_cur(lx)) {
 		case '\0':
 			//End lexing if end has been reached
@@ -509,8 +502,8 @@ reset:	tgt = lx->tgt;
 			if (lex_peekc(lx) == '#') {
 				lex_advc(lx);
 				t.type = TOK_DNS;
-			} else if (!nline && loc->col != 1) {
-				c_error(loc, "Stray '#' in source\n");
+			} else if (!nline && loc.col != 1) {
+				c_error(&loc, "Stray '#' in source\n");
 			}
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
@@ -572,7 +565,7 @@ reset:	tgt = lx->tgt;
 						lex_advc(lx); lex_advc(lx);
 						goto reset;
 					} else if (lex_cur(lx) == '\0') {
-						c_error(loc, "Unterminated comment\n");
+						c_error(&loc, "Unterminated comment\n");
 						t.type = TOK_END;
 						goto end;
 					}
@@ -707,7 +700,9 @@ num_case:		lex_num(lx, &t);
 			t.type = TOK_END;
 			break;
 	}
-end:	lex_advc(lx);
+end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR)
+		lex_advc(lx);
+	t.loc = tgt->loc;
 	lx->ahead = t;
 	return;
 }
@@ -728,7 +723,6 @@ int lex_wspace(lexer *lx) {
 //Returns zero if a macro was identified and expanded
 int lex_expand_macro(lexer *lx, token t) {
 	lex_target *tgt = lx->tgt;
-	char *cur = tgt->pos;
 
 	//Check for macro expansion
 	symbol *s = symtable_search(&lx->stb, t.dat.sval);
@@ -825,11 +819,11 @@ void lex_condskip(lexer *lx) {
 reset:	cond = vector_top(&lx->conds);
 	if (cond != NULL && (!cond->is_true || cond->was_true)) {
 		//Repeat until a conditional directive changes the state
-		while (*lx->tgt->pos != '\0') {
+		char cur = lex_cur(lx);
+		while (cur != '\0') {
 			int nline = lex_wspace(lx);
-			if (nline && *lx->tgt->pos == '#') {
-				lx->tgt->pos++;
-				lx->tgt->loc.col++;
+			if (nline && lex_cur(lx) == '#') {
+				lex_advc(lx);
 				lex_next(lx, 0);
 
 				//Only perform conditional directives
@@ -839,14 +833,14 @@ reset:	cond = vector_top(&lx->conds);
 					goto reset;
 				}
 			}
-			lx->tgt->pos++;
-			lx->tgt->loc.col++;
+			cur = lex_advc(lx);
 		}
 
 		//Premature end of input
-		if (*lx->tgt->pos == '\0')
+		if (cur == '\0')
 			c_error(&lx->tgt->loc, "Expected #endif before end of input\n");
 	}
+	return;
 }
 
 void lex_adv(lexer *lx) {

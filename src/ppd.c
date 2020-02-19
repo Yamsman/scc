@@ -13,7 +13,7 @@
 void ppd_defparams(lexer *lx, s_type *mtype) {
 	token *t = &lx->ahead;
 	s_pos *loc = &lx->tgt->loc;
-	lx->tgt->pos++;
+	lex_advc(lx);
 	lex_next(lx, 0);
 	if (t->nline) {
 		c_error(loc, "Expected ')' before newline\n");
@@ -48,60 +48,60 @@ void ppd_defparams(lexer *lx, s_type *mtype) {
 void ppd_define(lexer *lx) {
 	s_pos *loc = &lx->tgt->loc;
 
-	//Read macro name manually
+	//Read macro name
 	token mname;
 	lex_wspace(lx);
-	int mlen = lex_ident(lx, &mname);
+	lex_ident(lx, &mname);
+	int mlen = strlen(mname.dat.sval);
 	if (mlen == 0)
 		c_error(loc, "Invalid macro name\n");
-	lx->tgt->pos += mlen;
 
 	//Check for and read macro parameter list
 	s_type *mtype = type_new(TYPE_MACRO);
-	if (*lx->tgt->pos == '(')
+	if (lex_cur(lx) == '(')
 		ppd_defparams(lx, mtype);
 
-	//Get bounds of macro body
-	char *cur = lx->tgt->pos;
-	char *start, *end;
-	while (isspace(*cur) && *cur != '\n') cur++;
-	if (cur == lx->tgt->pos && *cur != '\n')
+	//Check for whitespace
+	int wspace = 0;
+	char cur = lex_cur(lx);
+	while (isspace(cur) && cur != '\n') {
+		wspace = 1;
+		cur = lex_advc(lx);
+	}
+	if (!wspace && cur != '\n')
 		c_error(loc, "No whitespace after macro name\n");
 
-	start = cur;
-	while (*cur != '\n') {
-		if (*cur == '\\' && *(cur+1) == '\n')
-			cur++;
-		cur++;
+	//Copy macro body to buffer
+	int len = 0;
+	int bsize = 256;
+	char *buf = malloc(bsize);
+	while (cur != '\n') {
+		//Resize if needed
+		if (len+2 == bsize) {
+			bsize *= 2;
+			buf = realloc(buf, bsize);
+		}
+
+		//Copy character to buffer
+		buf[len++] = cur;
+		cur = lex_advc(lx);
 	}
-	end = cur;
-	while (isspace(*(cur-1))) cur--;
+	buf[len] = '\0';
 
-	//Copy body to buffer
-	int len = cur - start;
-	char *buf = NULL;
-	if (len > 0) {
-		buf = malloc(len+1);
-		memcpy(buf, start, len);
-		buf[len] = '\0';
-
-		//Check for ## on edges of macro
-		if (len >= 2) {
-			if (buf[0] == '#' && buf[1] == '#' ||
-			    buf[len-2] == '#' && buf[len-1] == '#') {
-				c_error(loc, "'##' at beginning or end of macro\n");
-				lx->tgt->pos = end;
-				free(mname.dat.sval);
-				free(buf);
-				return;
-			}
+	//Check for ## on edges of macro
+	if (len >= 2) {
+		if (buf[0] == '#' && buf[1] == '#' ||
+		    buf[len-2] == '#' && buf[len-1] == '#') {
+			c_error(loc, "'##' at beginning or end of macro\n");
+			free(mname.dat.sval);
+			free(buf);
+			return;
 		}
 	}
 
 	//Add to symtable
 	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, mtype, &mname.loc);
 	sym->mac_exp = buf;
-	lx->tgt->pos = end;
 	return;
 }
 
@@ -109,50 +109,59 @@ void ppd_error(lexer *lx) {
 	s_pos *loc = &lx->tgt->loc;
 
 	//Read message
-	char *cur = lx->tgt->pos;
-	while (isspace(*cur) && *cur != '\n') cur++;
-	char *start = cur;
-	while (*cur != '\n') cur++;
+	int len = 0;
+	int bsize = 256;
+	char cur = lex_cur(lx);
+	char *buf = malloc(bsize);
+	while (isspace(cur) || cur != '\n') cur = lex_advc(lx);
+       	while (cur != '\n') {
+		//Resize if needed
+		if (len+2 == bsize) {
+			bsize *= 2;
+			buf = realloc(buf, bsize);
+		}
 
-	int len = cur - start;
-	char *buf = malloc(len+1);
-	memcpy(buf, start, len);
+		//Copy character to buffer
+		buf[len++] = cur;
+		cur = lex_advc(lx);
+	}
 	buf[len] = '\0';
 
 	//Print error
 	c_error(loc, "%s\n", buf);
 	free(buf);
-
-	lx->tgt->pos = cur;
 	return;
 }
 
 void ppd_include(lexer *lx) {
-	char *cur = lx->tgt->pos;
+	char cur = lex_cur(lx);
 	s_pos *loc = &lx->tgt->loc;
-	while (*cur == ' ') cur++;
+	while (cur == ' ') cur = lex_advc(lx);
 
 	//Get include type
-	char type = *cur++;
+	char type = cur;
 	if (type != '<' && type != '"')
 		c_error(loc, "#include expects <fname> or \"fname\"\n");
+	cur = lex_advc(lx);
 
 	//Get filename
-	char *begin = cur;
+	int fnlen = 0;
+	int bsize = 256;
+	char *fname = malloc(bsize);
 	char endc = (type == '"') ? '"' : '>';
-	while (*cur != endc) {
-		if (*cur == '\n') {
+	while (cur != endc) {
+		if (cur == '\n') {
 			c_error(loc, "Expected '%c' before end of line\n", endc);
 			return;
-		} else if (*cur == '\0') {
+		} else if (cur == '\0') {
 			c_error(loc, "Expected '%c' before end of file\n", endc);
 			return;
 		}
-		cur++;
+		fname[fnlen++] = cur;
+		cur = lex_advc(lx);
 	}
-	int fnlen = (cur++) - begin;
-	char *fname = malloc(fnlen+1);
-	memcpy(fname, begin, fnlen);
+	fname[fnlen] = '\0';
+	lex_advc(lx);
 
 	//Attempt to locate and open the included file
 	FILE *input_f = NULL;
@@ -263,7 +272,6 @@ void ppd_ifndef(lexer *lx) {
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifndef\n");
-	lex_next(lx, 0);
 
 	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 0 : 1;
 	lexer_add_cond(lx, res);
