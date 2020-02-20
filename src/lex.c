@@ -405,6 +405,59 @@ s_err:	c_error(&suffix_loc, "Invalid suffix on constant\n");
 	goto s_end;
 }
 
+//Reads an escape character
+char lex_eschar(lexer *lx) {
+	//Simple escape characters
+	s_pos loc = lx->tgt->loc;
+	switch (lex_cur(lx)) {
+		case '\'': lex_advc(lx); return '\'';
+		case '\"': lex_advc(lx); return '\"';
+		case '\?': lex_advc(lx); return '\?';
+		case '\\': lex_advc(lx); return '\\';
+		case 'a':  lex_advc(lx); return '\a';
+		case 'b':  lex_advc(lx); return '\b';
+		case 'f':  lex_advc(lx); return '\f';
+		case 'n':  lex_advc(lx); return '\n';
+		case 'r':  lex_advc(lx); return '\r';
+		case 't':  lex_advc(lx); return '\t';
+		case 'v':  lex_advc(lx); return '\v';
+	}
+
+	//Number escape character
+	char cur = lex_cur(lx);
+	unsigned int val = 0;
+	if (cur == 'x') {
+		//Hexadecimal
+		cur = lex_advc(lx);
+		if (!isxdigit(cur)) {
+			c_warn(&loc, "\\x escape character without hexadecimal digits\n");
+			return 0;
+		}
+
+		//Read number and check range
+		while (isxdigit(cur)) {
+			int dval = (!isdigit(cur)) ? 10 + (tolower(cur) - 'a') : (cur - '0');
+			val = (val * 16) + dval;
+			cur = lex_advc(lx);
+		}
+		if (val > 0xFF)
+			c_warn(&loc, "hexadecimal escape char out of range\n");
+	} else if (isdigit(cur) && cur != '8' && cur != '9') {
+		//Octal
+		//Read number
+		while (isdigit(cur) && cur != '8' && cur != '9') {
+			val = (val * 8) + (cur - '0');
+			cur = lex_advc(lx);
+		}
+
+		//Check range
+		if (val > 0377)
+			c_warn(&loc, "octal escape char out of range\n");
+	}
+
+	return val;
+}
+
 //Reads a quotation-enclosed string
 void lex_str(lexer *lx, token *t) {
 	int len = 0;
@@ -429,8 +482,10 @@ void lex_str(lexer *lx, token *t) {
 			continue;
 		} else if (cur == '\\') {
 			//Escape sequence
-			//cur++;
-			//continue;
+			lex_advc(lx);
+			buf[len++] = lex_eschar(lx);
+			cur = lex_cur(lx);
+			continue;
 		}
 
 		//Copy character to buffer
@@ -470,6 +525,7 @@ reset:	tgt = lx->tgt;
 	loc = tgt->loc;
 
 	//Process the next character
+	t.loc = tgt->loc;
 	switch (lex_cur(lx)) {
 		case '\0':
 			//End lexing if end has been reached
@@ -495,8 +551,28 @@ reset:	tgt = lx->tgt;
 		case ')':	t.type = TOK_RPR; 	break;
 		case '[':	t.type = TOK_LBK;	break;
 		case ']':	t.type = TOK_RBK;	break;
-		case '\'': 	t.type = TOK_SQT; 	break;
 		case '"':	lex_str(lx, &t);	break;
+		case '\'':
+			//Character literal
+			lex_advc(lx);
+
+			//Process escape character
+			char val = lex_cur(lx);
+			if (val == '\\') {
+				lex_advc(lx);
+				val = lex_eschar(lx);
+			}
+
+			//Check for closing '
+			if (lex_cur(lx) == '\'') {
+				lex_advc(lx);
+			} else {
+				c_error(&loc, "Multiple characters in character literal\n");
+			}
+
+			t.dat.ival = val;
+			t.type = TOK_CONST;
+			break;
 		case '#':
 			t.type = TOK_SNS;
 			if (lex_peekc(lx) == '#') {
@@ -687,11 +763,6 @@ reset:	tgt = lx->tgt;
 		case '5': case '6': case '7': case '8': case '9':
 			//Read number
 num_case:		lex_num(lx, &t);
-
-			if (t.dtype->kind == TYPE_INT)
-				printf("%lld\n", t.dat.ival);
-			else if (t.dtype->kind == TYPE_FLOAT)
-				printf("%lf\n", t.dat.fval);
 			//free(t.dtype); //temporary
 			t.type = TOK_CONST;
 			break;
@@ -702,7 +773,6 @@ num_case:		lex_num(lx, &t);
 	}
 end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR)
 		lex_advc(lx);
-	t.loc = tgt->loc;
 	lx->ahead = t;
 	return;
 }
