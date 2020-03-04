@@ -12,17 +12,21 @@
 int rankof(int op) {
 	switch (op) {
 		case TOK_QMK:		
-		case TOK_COL:		return 12;
-		case TOK_DEFINED:	return 11;
+		case TOK_COL:		return 13;
+		case TOK_DEFINED:	return 12;
 		case TOK_LOGIC_NOT:
-		case TOK_NOT:		return 10;
+		case TOK_NOT:		return 11;
 		case TOK_ASR:
 		case TOK_DIV:
-		case TOK_MOD:		return 9;
+		case TOK_MOD:		return 10;
 		case TOK_ADD:
-		case TOK_SUB:		return 8;
+		case TOK_SUB:		return 9;
 		case TOK_LSHIFT:
-		case TOK_RSHIFT:	return 7;
+		case TOK_RSHIFT:	return 8;
+		case TOK_GTH:
+		case TOK_LTH:
+		case TOK_GEQ:
+		case TOK_LEQ:		return 7;
 		case TOK_EQ: 
 		case TOK_NEQ:		return 6;
 		case TOK_AND:		return 5;
@@ -59,6 +63,10 @@ long long do_op(int op, int lhs, int rhs, int trs) {
 		case TOK_SUB:		return lhs - rhs;
 		case TOK_LSHIFT:	return lhs << rhs;
 		case TOK_RSHIFT:	return lhs >> rhs;
+		case TOK_GTH:		return lhs > rhs;
+		case TOK_LTH:		return lhs < rhs;
+		case TOK_GEQ:		return lhs >= rhs;
+		case TOK_LEQ:		return lhs <= rhs;
 		case TOK_EQ: 		return lhs == rhs;
 		case TOK_NEQ:		return lhs != rhs;
 		case TOK_AND:		return lhs & rhs;
@@ -153,7 +161,7 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 			//Handle special case for ternary operator
 			if (t->type == TOK_COL) {
 				if ((long long)vector_top(&ops) != TOK_QMK)
-					c_error(&t->loc, "Missing '?' before ':' in"
+					c_error(&t->loc, "Missing '?' before ':' in "
 							"constant expresion\n");
 				continue;
 			}
@@ -173,13 +181,13 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 	//Finish calculations if the condition has ended
 	while (ops.len > 0) {
 		if (vals.len < 1) {
-			c_error(NULL, "Operator in constant expression has no RHS\n");
+			c_error(&lx->tgt->loc, "Operator in constant expression has no RHS\n");
 			break;
 		}
 		do_calc(&ops, &vals);
 	}
 	if (vals.len > 1) {
-		c_error(NULL, "Missing operator in constant expression\n");
+		c_error(&lx->tgt->loc, "Missing operator in constant expression\n");
 	}
 
 	//Get result

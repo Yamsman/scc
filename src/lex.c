@@ -842,7 +842,7 @@ void lex_ppd(lexer *lx) {
 		case TOK_KW_ELIF:	ppd_elif(lx);			break;
 		case TOK_KW_ELSE:	ppd_else(lx);			break;
 		case TOK_KW_ENDIF:   	ppd_endif(lx);			break;
-		case TOK_KW_ERROR:	ppd_error(lx);			break;
+		case TOK_KW_ERROR:	ppd_error(lx, 0);		break;
 		case TOK_KW_IF:		ppd_if(lx);			break;
 		case TOK_KW_IFDEF:	ppd_ifdef(lx);			break;
 		case TOK_KW_IFNDEF:	ppd_ifndef(lx);			break;
@@ -850,6 +850,7 @@ void lex_ppd(lexer *lx) {
 		case TOK_KW_LINE:					break;
 		case TOK_KW_PRAGMA:					break;
 		case TOK_KW_UNDEF:	ppd_undef(lx);			break;
+		case TOK_KW_WARNING:	ppd_error(lx, 1);		break;
 		default:
 			c_error(&ppd.loc, "Invalid preprocessor directive\n");
 			break;

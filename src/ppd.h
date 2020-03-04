@@ -2,7 +2,7 @@
 #define PPD_H
 
 void ppd_define(struct LEXER *lx);
-void ppd_error(struct LEXER *lx);
+void ppd_error(struct LEXER *lx, int is_warn);
 void ppd_include(struct LEXER *lx);
 void ppd_undef(struct LEXER *lx);
 

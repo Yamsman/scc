@@ -105,7 +105,7 @@ void ppd_define(lexer *lx) {
 	return;
 }
 
-void ppd_error(lexer *lx) {
+void ppd_error(lexer *lx, int is_warn) {
 	s_pos *loc = &lx->tgt->loc;
 
 	//Read message
@@ -113,7 +113,7 @@ void ppd_error(lexer *lx) {
 	int bsize = 256;
 	char cur = lex_cur(lx);
 	char *buf = malloc(bsize);
-	while (isspace(cur) || cur != '\n') cur = lex_advc(lx);
+	while (isspace(cur)) cur = lex_advc(lx);
        	while (cur != '\n') {
 		//Resize if needed
 		if (len+2 == bsize) {
@@ -127,8 +127,12 @@ void ppd_error(lexer *lx) {
 	}
 	buf[len] = '\0';
 
-	//Print error
-	c_error(loc, "%s\n", buf);
+	//Print error/warning
+	if (is_warn)
+		c_warn(loc, "%s\n", buf);
+	else
+		c_error(loc, "%s\n", buf);
+
 	free(buf);
 	return;
 }
