@@ -103,6 +103,7 @@ typedef struct LEX_TARGET {
 	char *pos;			//Current position in buffer
 	char cch;			//The current character, after preprocessing
 	struct SRC_POS loc;		//Current location in file
+	struct VECTOR mp_exp;		//Parameter expansions; parallel with macro parameter list
 	struct LEX_TARGET *prev;	//Pointer to previous target
 } lex_target;
 

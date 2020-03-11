@@ -99,6 +99,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 		n_tgt->loc.fname = name;
 	}
 
+	vector_init(&n_tgt->mp_exp, VECTOR_EMPTY);
 	n_tgt->prev = lx->tgt;
 	lx->tgt = n_tgt;
 	return;
@@ -111,6 +112,7 @@ void lexer_tgt_close(lexer *lx) {
 		free(tgt->buf);
 	}
 	lx->tgt = tgt->prev;
+	vector_close(&tgt->mp_exp);
 
 	free(tgt);
 	return;
@@ -793,44 +795,97 @@ int lex_wspace(lexer *lx) {
 //Returns zero if a macro was identified and expanded
 int lex_expand_macro(lexer *lx, token t) {
 	lex_target *tgt = lx->tgt;
-
-	//Check for macro expansion
 	symbol *s = symtable_search(&lx->stb, t.dat.sval);
-	if (s != NULL && s->mac_exp != NULL) {
-		//Check target stack to prevent reexpansion
-		int expanded = 0;
-		for (lex_target *i = tgt; i != NULL; i = i->prev) {
-			if (i->type == TGT_MACRO && !strcmp(i->name, t.dat.sval)) {
-				expanded = 1;
+
+	//Check to see if there is an applicable macro for the given name
+	int expanded = 0;
+	char *m_name = (s != NULL) ? s->name : NULL;
+	char *m_exp = (s != NULL) ? s->mac_exp : NULL;
+	for (lex_target *i = tgt; i != NULL; i = i->prev) {
+		//Only check macro contexts
+		if (i->type != TGT_MACRO) continue;
+
+		//If the macro was found in the symbol table, check if it is a macro parameter
+		if (m_exp == NULL) {
+			symbol *m = symtable_search(&lx->stb, i->name);
+			if (m == NULL) continue;
+
+			//Check the macro's parameters
+			vector *ptable = &m->type->param;
+			for (int j=0; j<ptable->len; j++) {
+				s_param *p = ptable->table[j];
+
+				//If a match is found, s becomes the "parent" macro
+				if (!strcmp(t.dat.sval, p->name)) {
+					s = m;
+					m_name = p->name;
+					m_exp = i->mp_exp.table[j];
+					goto pfound;
+				}
+			}
+		}
+
+		//Check to see if the macro has been expanded
+		if (!strcmp(i->name, t.dat.sval)) {
+			expanded = 1;
+		}
+	}
+	if (m_exp == NULL || expanded) return -1;
+	
+	//Check for and read function macro arguments
+pfound:	lex_wspace(lx);
+	vector macro_params;
+	vector_init(&macro_params, VECTOR_EMPTY);
+	if (lex_cur(lx) == '(') {
+		//Read macro arguments
+		char cur = lex_advc(lx);
+		while ((cur = lex_cur(lx)) != ')') {
+			//Skip whitespace
+			lex_wspace(lx);
+			cur = lex_cur(lx);
+
+			//Read a single argument
+			int len = 0;
+			int bsize = 256;
+			char *buf = malloc(bsize);
+			while (cur != ')' && cur != ',' && cur != '\0') {
+				//Resize if needed
+				if (len+2 == bsize) {
+					bsize *= 2;
+					buf = realloc(buf, bsize);
+				}
+
+				//Copy character to buffer
+				buf[len++] = cur;
+				cur = lex_advc(lx);
+			}
+			buf[len] = '\0';
+			vector_add(&macro_params, buf);
+
+			//Post-read checks
+			if (cur == ',') cur = lex_advc(lx);
+			if (cur == '\0') {
+				c_error(&lx->tgt->loc,
+					"Unexpected end of input in macro parameter list\n");
 				break;
 			}
 		}
-		if (expanded) return -1;
-
-		//Check for function macro arguments
-		//TODO: skip whitespace, error handling, loc updating
-		lex_next(lx, 0);
-		/*
-		if (lex_peek(lx).kind == TOK_LPR) {
-			cur = tgt->pos;
-			char *begin = cur;
-			while (*cur != ')' && *cur != ',')
-				cur++;
-
-		}
-		tgt->pos = cur;
-		*/
-
-		//Expand the macro
-		lexer_tgt_open(lx, t.dat.sval, TGT_MACRO, s->mac_exp);
-		tgt = lx->tgt;
-
-		//Free the identifier
-		free(t.dat.sval);
-		t.dat.sval = NULL;
-		return 0;
+		lex_advc(lx);
 	}
-	return -1;
+
+	//Expand the macro
+	lexer_tgt_open(lx, m_name, TGT_MACRO, m_exp);
+	tgt = lx->tgt;
+
+	//Set definitions for each parameter
+	for (int i=0; i<macro_params.len; i++)
+		vector_add(&tgt->mp_exp, macro_params.table[i]);
+
+	//Free the macro name and parameters
+	vector_close(&macro_params);
+	free(t.dat.sval);
+	t.dat.sval = NULL;
+	return 0;
 }
 
 //Perform preprocessing

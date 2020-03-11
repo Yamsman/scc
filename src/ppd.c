@@ -128,10 +128,8 @@ void ppd_error(lexer *lx, int is_warn) {
 	buf[len] = '\0';
 
 	//Print error/warning
-	if (is_warn)
-		c_warn(loc, "%s\n", buf);
-	else
-		c_error(loc, "%s\n", buf);
+	if (is_warn) c_warn(loc, "%s\n", buf);
+	else c_error(loc, "%s\n", buf);
 
 	free(buf);
 	return;
