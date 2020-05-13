@@ -784,7 +784,20 @@ end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR)
 int lex_wspace(lexer *lx) {
 	int nline = 0;
 	char cur = lex_cur(lx);
-	while (isspace(cur)) {
+	for (;;) {
+		//Handle whitespace checks at end of lexer context
+		if (cur == '\0') {
+			if (lx->tgt->prev != NULL) {
+				lexer_tgt_close(lx);
+				cur = lex_cur(lx);
+			} else {
+				break;
+			}
+			continue;
+		}
+		
+		//Check for newline and skip whitespace
+		if (!isspace(cur)) break;
 		if (cur == '\n') nline = 1;
 		cur = lex_advc(lx);
 	}

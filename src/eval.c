@@ -160,7 +160,11 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 
 			//Handle special case for ternary operator
 			if (t->type == TOK_COL) {
-				if ((long long)vector_top(&ops) != TOK_QMK)
+				int has_qmk = 0;
+				for (int j=0; j<ops.len; j++) {
+					if ((long long)(ops.table[i]) == TOK_QMK) has_qmk = 1;
+				}
+				if (!has_qmk)
 					c_error(&t->loc, "Missing '?' before ':' in "
 							"constant expresion\n");
 				continue;

@@ -222,9 +222,12 @@ int ppd_constexpr(lexer *lx, int *err) {
 
 	//Get tokens until the end of the line
 	int nline = lex_wspace(lx);
+	token t = BLANK_TOKEN;
 	while (!(nline = lex_wspace(lx))) {
-		lex_next(lx, 0);
-		token t = lex_peek(lx);
+		//Expand macros by default, unless the previous token was "defined"
+		int do_expand = !(t.type == TOK_DEFINED);
+		lex_next(lx, do_expand);
+		t = lex_peek(lx);
 
 		//Add the token to the vector
 		token *tn = malloc(sizeof(struct TOKEN));
