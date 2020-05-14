@@ -157,7 +157,9 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 	}
 	loc.col++;
 
-	//Move to the next character
+	/*
+	 * Move to the next character
+	 */
 	char *cur = lx->tgt->pos+1;
 	char nchar = *cur;
 	for (;;) {
@@ -183,7 +185,7 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 				loc.col += 2;
 			}
 		}
-		
+
 		//Process newline splicing
 		if (nchar == '\\' && *(cur+1) == '\n') {
 			cur += 2;
@@ -195,7 +197,35 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 			break;
 		}
 	}
+
+	//Handle stringification
+
+	/*
+	 * Handle token pasting
+	 */
+	//Only attempt once per chunk of whitespace
+	char *ch = cur;
+	if (isspace(*ch) && !isspace(*lx->tgt->pos))
+		while (isspace(*ch) && *ch != '\n') ch++;
+
+	//Check for double pound sign
+	int has_dns = 0;
+	if (lx->tgt->type == TGT_MACRO && *ch == '#') {
+		//Check for a '##'
+		if (*(ch++) == '#') {
+			has_dns = 1;
+			while (isspace(*(++ch)) && *ch != '\n');
+		}
+	}
 	
+	//Perform token pasting
+	if (has_dns) {
+		loc.col += ch - cur;
+		cur = ch;
+		nchar = *cur;
+		printf("%i\n", loc.col);
+	}	
+
 	//Update external values if applicable and return the next character
 	if (len != NULL) *len = cur - lx->tgt->pos;
 	if (nloc != NULL) *nloc = loc;
@@ -580,6 +610,7 @@ reset:	tgt = lx->tgt;
 			if (lex_peekc(lx) == '#') {
 				lex_advc(lx);
 				t.type = TOK_DNS;
+				c_error(&loc, "Stray '##' in source\n");
 			} else if (!nline && loc.col != 1) {
 				c_error(&loc, "Stray '#' in source\n");
 			}
@@ -851,6 +882,7 @@ pfound:	lex_wspace(lx);
 	vector_init(&macro_params, VECTOR_EMPTY);
 	if (lex_cur(lx) == '(') {
 		//Read macro arguments
+		int paren_c = 0;
 		char cur = lex_advc(lx);
 		while ((cur = lex_cur(lx)) != ')') {
 			//Skip whitespace
@@ -861,7 +893,18 @@ pfound:	lex_wspace(lx);
 			int len = 0;
 			int bsize = 256;
 			char *buf = malloc(bsize);
-			while (cur != ')' && cur != ',' && cur != '\0') {
+			for (;;) {
+				//Only stop if a ')' or ',' is encountered
+				//outside of nested parentheses
+				if (cur == '(') paren_c++;
+				if (cur == ',' && paren_c == 0) break;
+				if (cur == ')') {
+					if (paren_c == 0)
+						break;
+					paren_c--;
+				}
+				if (cur == '\0') break;
+
 				//Resize if needed
 				if (len+2 == bsize) {
 					bsize *= 2;
@@ -955,13 +998,15 @@ int is_condppd(int type) {
  */
 void lex_condskip(lexer *lx) {
 	lex_cond *cond;
+	int had_nl = 0;
 reset:	cond = vector_top(&lx->conds);
 	if (cond != NULL && (!cond->is_true || cond->was_true)) {
 		//Repeat until a conditional directive changes the state
 		char cur = lex_cur(lx);
 		while (cur != '\0') {
 			int nline = lex_wspace(lx);
-			if (nline && lex_cur(lx) == '#') {
+			if ((nline || had_nl) && lex_cur(lx) == '#') {
+				if (cur == '\n') had_nl = 1;
 				lex_advc(lx);
 				lex_next(lx, 0);
 
@@ -973,6 +1018,7 @@ reset:	cond = vector_top(&lx->conds);
 				}
 			}
 			cur = lex_advc(lx);
+			had_nl = 0;
 		}
 
 		//Premature end of input

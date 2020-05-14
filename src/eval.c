@@ -11,29 +11,29 @@
 //Returns the precedence of each operation
 int rankof(int op) {
 	switch (op) {
-		case TOK_QMK:		
-		case TOK_COL:		return 13;
-		case TOK_DEFINED:	return 12;
+		case TOK_DEFINED:	return 13;
 		case TOK_LOGIC_NOT:
-		case TOK_NOT:		return 11;
+		case TOK_NOT:		return 12;
 		case TOK_ASR:
 		case TOK_DIV:
-		case TOK_MOD:		return 10;
+		case TOK_MOD:		return 11;
 		case TOK_ADD:
-		case TOK_SUB:		return 9;
+		case TOK_SUB:		return 10;
 		case TOK_LSHIFT:
-		case TOK_RSHIFT:	return 8;
+		case TOK_RSHIFT:	return 9;
 		case TOK_GTH:
 		case TOK_LTH:
 		case TOK_GEQ:
-		case TOK_LEQ:		return 7;
+		case TOK_LEQ:		return 8;
 		case TOK_EQ: 
-		case TOK_NEQ:		return 6;
-		case TOK_AND:		return 5;
-		case TOK_XOR:		return 4;
-		case TOK_OR:		return 3;
-		case TOK_LOGIC_AND:	return 2;
-		case TOK_LOGIC_OR:	return 1;
+		case TOK_NEQ:		return 7;
+		case TOK_AND:		return 6;
+		case TOK_XOR:		return 5;
+		case TOK_OR:		return 4;
+		case TOK_LOGIC_AND:	return 3;
+		case TOK_LOGIC_OR:	return 2;
+		case TOK_QMK:		
+		case TOK_COL:		return 1;
 		case TOK_CMM:		return 0;
 	}
 	return -1;
@@ -161,9 +161,8 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 			//Handle special case for ternary operator
 			if (t->type == TOK_COL) {
 				int has_qmk = 0;
-				for (int j=0; j<ops.len; j++) {
-					if ((long long)(ops.table[i]) == TOK_QMK) has_qmk = 1;
-				}
+				for (int j=0; j<ops.len; j++)
+					if ((long long)(ops.table[j]) == TOK_QMK) has_qmk = 1;
 				if (!has_qmk)
 					c_error(&t->loc, "Missing '?' before ':' in "
 							"constant expresion\n");
