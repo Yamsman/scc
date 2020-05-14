@@ -42,6 +42,7 @@ lexer *lexer_init(char *fname) {
 		return NULL;
 	}
 	symtable_init(&lx->stb);
+	lx->m_exp = 1;
 
 	return lx;
 }
@@ -143,7 +144,9 @@ char lex_cur(lexer *lx) {
 //If not NULL, the struct pointed to by nloc will be set to the resultant source location
 char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 	//If the end of input has already been reached, do not attempt to look further
-	s_pos loc = lx->tgt->loc;
+	s_pos loc;
+	int is_reset = 0;
+reset:	loc = lx->tgt->loc;
 	if (lx->tgt->cch == '\0') {
 		if (len != NULL) *len = 0;
 		if (nloc != NULL) *nloc = loc;
@@ -160,13 +163,13 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 	/*
 	 * Move to the next character
 	 */
-	char *cur = lx->tgt->pos+1;
-	char nchar = *cur;
+	char *pos = (is_reset) ? lx->tgt->pos : lx->tgt->pos+1;
+	char nchar = *pos;
 	for (;;) {
 		//Process trigraphs
-		if (*cur == '?' && *(cur+1) == '?') {
+		if (*pos == '?' && *(pos+1) == '?') {
 			int conv = 1;
-			switch (*(cur+2)) {
+			switch (*(pos+2)) {
 				case '=': nchar = '#';  break;
 				case '(': nchar = '[';  break;
 				case '/': nchar = '\\'; break;
@@ -181,15 +184,15 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 
 			//A conversion only takes place if the trigram was valid
 			if (conv) {
-				cur += 2;
+				pos += 2;
 				loc.col += 2;
 			}
 		}
 
 		//Process newline splicing
-		if (nchar == '\\' && *(cur+1) == '\n') {
-			cur += 2;
-			nchar = *cur;
+		if (nchar == '\\' && *(pos+1) == '\n') {
+			pos += 2;
+			nchar = *pos;
 			loc.col = 1;
 			loc.line++;
 		} else {
@@ -198,36 +201,70 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
 		}
 	}
 
-	//Handle stringification
+	/*
+	 * Macro expansion
+	 * Only attempt if currently at beginning of an identifier and expansion is enabled
+	 */
+	char prev = (is_reset) ? '\0' : *lx->tgt->pos;
+	if (lx->m_exp && (!isalpha(prev) && prev != '_') && (isalpha(nchar) || nchar == '_')) {
+		//Read identifier
+		int len = 0;
+		int bsize = 256;
+		char *cur = pos;
+		char *buf = malloc(bsize);
+		while (isalnum(*cur) || *cur == '_') {
+			//Resize if needed
+			if (len+2 == bsize) {
+				bsize *= 2;
+				buf = realloc(buf, bsize);
+			}
+
+			//Copy character to buffer
+			buf[len++] = *cur;
+			cur++;
+		}
+		buf[len] = '\0';
+
+		//Attempt to expand
+		if (!lex_expand_macro(lx, buf)) {
+			//loc.col += cur - pos;
+			//pos = cur;
+			//nchar = *pos;
+
+			is_reset = 1;
+			goto reset;
+		}
+		free(buf);
+	}
+
 
 	/*
 	 * Handle token pasting
 	 */
 	//Only attempt once per chunk of whitespace
-	char *ch = cur;
-	if (isspace(*ch) && !isspace(*lx->tgt->pos))
-		while (isspace(*ch) && *ch != '\n') ch++;
+	char *cur = pos;
+	if (isspace(*cur) && !isspace(*lx->tgt->pos))
+		while (isspace(*cur) && *cur != '\n') cur++;
 
 	//Check for double pound sign
 	int has_dns = 0;
-	if (lx->tgt->type == TGT_MACRO && *ch == '#') {
+	if (lx->tgt->type == TGT_MACRO && *cur == '#') {
 		//Check for a '##'
-		if (*(ch++) == '#') {
+		if (*(cur++) == '#') {
 			has_dns = 1;
-			while (isspace(*(++ch)) && *ch != '\n');
+			while (isspace(*(++cur)) && *cur != '\n');
 		}
 	}
 	
 	//Perform token pasting
 	if (has_dns) {
-		loc.col += ch - cur;
-		cur = ch;
-		nchar = *cur;
-		printf("%i\n", loc.col);
+		loc.col += cur - pos;
+		pos = cur;
+		nchar = *pos;
 	}	
 
 	//Update external values if applicable and return the next character
-	if (len != NULL) *len = cur - lx->tgt->pos;
+	if (len != NULL) *len = pos - lx->tgt->pos;
 	if (nloc != NULL) *nloc = loc;
 	return nchar;
 }
@@ -568,8 +605,8 @@ reset:	tgt = lx->tgt;
 				t.type = TOK_END;
 				lx->ahead = t;
 				return;
-			}
 			goto reset;
+			}
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ':':	t.type = TOK_COL;	break;
 		case ',':	t.type = TOK_CMM; 	break;
@@ -781,10 +818,6 @@ reset:	tgt = lx->tgt;
 			if (kw_id > 0)
 				t.type = kw_id;
 
-			//Check for macro expansion
-			if (m_exp && !lex_expand_macro(lx, t))
-				goto reset;
-
 			//If the token is an identifier, free the string
 			if (kw_id != 0) {
 				free(t.dat.sval);
@@ -837,9 +870,10 @@ int lex_wspace(lexer *lx) {
 
 //Sets the lexer to expand a macro
 //Returns zero if a macro was identified and expanded
-int lex_expand_macro(lexer *lx, token t) {
+int lex_expand_macro(lexer *lx, char *ident) {
 	lex_target *tgt = lx->tgt;
-	symbol *s = symtable_search(&lx->stb, t.dat.sval);
+	symbol *s = symtable_search(&lx->stb, ident);
+	lx->m_exp = 0; //Temporarily disable macro expansion
 
 	//Check to see if there is an applicable macro for the given name
 	int expanded = 0;
@@ -860,7 +894,7 @@ int lex_expand_macro(lexer *lx, token t) {
 				s_param *p = ptable->table[j];
 
 				//If a match is found, s becomes the "parent" macro
-				if (!strcmp(t.dat.sval, p->name)) {
+				if (!strcmp(ident, p->name)) {
 					s = m;
 					m_name = p->name;
 					m_exp = i->mp_exp.table[j];
@@ -870,16 +904,21 @@ int lex_expand_macro(lexer *lx, token t) {
 		}
 
 		//Check to see if the macro has been expanded
-		if (!strcmp(i->name, t.dat.sval)) {
+		if (!strcmp(i->name, ident)) {
 			expanded = 1;
 		}
 	}
-	if (m_exp == NULL || expanded) return -1;
+	if (m_exp == NULL || expanded) {
+		lx->m_exp = 1;
+		return -1;
+	}
+
 	
 	//Check for and read function macro arguments
 pfound:	lex_wspace(lx);
 	vector macro_params;
 	vector_init(&macro_params, VECTOR_EMPTY);
+	while (isalnum(lex_cur(lx))) lex_advc(lx);
 	if (lex_cur(lx) == '(') {
 		//Read macro arguments
 		int paren_c = 0;
@@ -939,8 +978,8 @@ pfound:	lex_wspace(lx);
 
 	//Free the macro name and parameters
 	vector_close(&macro_params);
-	free(t.dat.sval);
-	t.dat.sval = NULL;
+	free(ident);
+	lx->m_exp = 1;
 	return 0;
 }
 
@@ -1032,8 +1071,10 @@ void lex_adv(lexer *lx) {
 reset:	lex_condskip(lx);
 	lex_next(lx, 1);
 	if (lx->ahead.type == TOK_SNS) {
+		lx->m_exp = 0; //Temporarily disable macro expansion
 		lex_next(lx, 0);
 		lex_ppd(lx);
+		lx->m_exp = 1;
 		goto reset;
 	}
 	return;

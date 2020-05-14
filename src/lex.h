@@ -120,10 +120,10 @@ typedef struct LEXER {
 	struct VECTOR flist;		//List of processed files
 	struct VECTOR conds;		//Preprocessor conditions
 	struct SYMTABLE stb;		//Symbol table
+	int m_exp;			//Flag for enabling/disabling macro expansion
 } lexer;
 
 extern struct TOKEN BLANK_TOKEN;
-
 void init_kwtable();
 void close_kwtable();
 
@@ -147,7 +147,7 @@ void lex_ident(struct LEXER *lx, struct TOKEN *t);
 void lex_num(struct LEXER *lx, struct TOKEN *t);
 void lex_str(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
-int lex_expand_macro(struct LEXER *lx, struct TOKEN t);
+int lex_expand_macro(struct LEXER *lx, char *ident);
 
 //Used externally to control the lexer
 struct TOKEN lex_peek(struct LEXER *lx);
@@ -155,6 +155,7 @@ void lex_adv(struct LEXER *lx);
 void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);
 struct SRC_POS lex_loc(struct LEXER *lx);
 
+//Helper functions
 int is_type_spec(struct TOKEN t);
 struct TOKEN_NODE *make_tok_node(struct TOKEN t);
 
