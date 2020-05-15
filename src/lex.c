@@ -143,28 +143,39 @@ char lex_cur(lexer *lx) {
 //If not NULL, the integer pointed to by len will be set to the number of characters processed
 //If not NULL, the struct pointed to by nloc will be set to the resultant source location
 char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
-	//If the end of input has already been reached, do not attempt to look further
 	s_pos loc;
+	char *pos;
+	char nchar;
 	int is_reset = 0;
-reset:	loc = lx->tgt->loc;
-	if (lx->tgt->cch == '\0') {
-		if (len != NULL) *len = 0;
-		if (nloc != NULL) *nloc = loc;
-		return '\0';
-	}
-
-	//Update location
-	if (*lx->tgt->pos == '\n') {
-		loc.col = 0;
-		loc.line++;
-	}
-	loc.col++;
 
 	/*
 	 * Move to the next character
 	 */
-	char *pos = (is_reset) ? lx->tgt->pos : lx->tgt->pos+1;
-	char nchar = *pos;
+	char *prev_pos = lx->tgt->pos;
+	char prev_cch = lx->tgt->cch;
+reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
+	nchar = *pos;
+	loc = lx->tgt->loc;
+
+	//Release the current context if the end has been reached
+	if (nchar == '\0') {
+		//The last context will stay open until the lexer is closed
+		if (lx->tgt->prev == NULL)
+			return '\0';
+
+		lexer_tgt_close(lx);
+		is_reset = 1;
+		goto reset;
+	}
+
+	//Update location
+	if (*lx->tgt->pos == '\n') {
+		loc.col = (is_reset) ? 1 : 0;
+		loc.line++;
+	}
+	loc.col++;
+
+	//Perform trigraph conversion/newline splicing if needed
 	for (;;) {
 		//Process trigraphs
 		if (*pos == '?' && *(pos+1) == '?') {
@@ -225,15 +236,17 @@ reset:	loc = lx->tgt->loc;
 		}
 		buf[len] = '\0';
 
-		//Attempt to expand
+		//Attempt to expand the macro
+		//prev_pos = lx->tgt->pos;
+		//prev_cch = lx->tgt->cch;
+		lx->tgt->pos = cur;
+		lx->tgt->cch = *cur;
 		if (!lex_expand_macro(lx, buf)) {
-			//loc.col += cur - pos;
-			//pos = cur;
-			//nchar = *pos;
-
 			is_reset = 1;
 			goto reset;
 		}
+		lx->tgt->pos = prev_pos;
+		lx->tgt->cch = prev_cch;
 		free(buf);
 	}
 
@@ -246,7 +259,7 @@ reset:	loc = lx->tgt->loc;
 	if (isspace(*cur) && !isspace(*lx->tgt->pos))
 		while (isspace(*cur) && *cur != '\n') cur++;
 
-	//Check for double pound sign
+	//Perform token pasting if a double pound sign exists
 	int has_dns = 0;
 	if (lx->tgt->type == TGT_MACRO && *cur == '#') {
 		//Check for a '##'
@@ -255,8 +268,6 @@ reset:	loc = lx->tgt->loc;
 			while (isspace(*(++cur)) && *cur != '\n');
 		}
 	}
-	
-	//Perform token pasting
 	if (has_dns) {
 		loc.col += cur - pos;
 		pos = cur;
@@ -265,7 +276,12 @@ reset:	loc = lx->tgt->loc;
 
 	//Update external values if applicable and return the next character
 	if (len != NULL) *len = pos - lx->tgt->pos;
-	if (nloc != NULL) *nloc = loc;
+	if (nloc != NULL) {
+		if (lx->tgt->type != TGT_MACRO)
+			*nloc = loc;
+		else
+			*nloc = lx->tgt->loc;
+	}
 	return nchar;
 }
 
@@ -277,7 +293,13 @@ char lex_peekc(lexer *lx) {
 //Advances the lexer by one character
 char lex_advc(lexer *lx) {
 	int len; s_pos loc;
-	lx->tgt->cch = lex_nchar(lx, &len, &loc);
+	char nc = lex_nchar(lx, &len, &loc);
+	if (nc == '\0') return nc;
+
+	//if (nc == '\n') printf("\\n\n");
+	//else printf("%c : %i\n", nc, nc);
+
+	lx->tgt->cch = nc;
 	lx->tgt->pos += len;
 	lx->tgt->loc = loc;
 	return lx->tgt->cch;
@@ -560,7 +582,6 @@ void lex_str(lexer *lx, token *t) {
 		//Copy character to buffer
 		buf[len++] = c;
 		cur = lex_advc(lx);
-
 	}
 	buf[len] = '\0';
 	t->dat.sval = buf;
@@ -588,8 +609,8 @@ void lex_next(lexer *lx, int m_exp) {
 	//Count the beginning of a file as a newline
 	//When the lexer is reset (when a new context is created) it begins from here
 	int nline = (tgt->pos == tgt->buf && tgt->type == TGT_FILE);
-reset:	tgt = lx->tgt;
-	nline |= lex_wspace(lx);
+reset:	nline |= lex_wspace(lx);
+	tgt = lx->tgt;
 	t.nline = nline;
 	loc = tgt->loc;
 
@@ -599,14 +620,19 @@ reset:	tgt = lx->tgt;
 		case '\0':
 			//End lexing if end has been reached
 			//Otherwise, go to previous target
+			/*
 			lexer_tgt_close(lx);
 			tgt = lx->tgt;
 			if (tgt == NULL) {
 				t.type = TOK_END;
 				lx->ahead = t;
 				return;
-			goto reset;
 			}
+			goto reset;
+			*/
+			t.type = TOK_END;
+			lx->ahead = t;
+			return;
 		case ';': 	t.type = TOK_SEM; 	break;
 		case ':':	t.type = TOK_COL;	break;
 		case ',':	t.type = TOK_CMM; 	break;
@@ -852,7 +878,8 @@ int lex_wspace(lexer *lx) {
 		//Handle whitespace checks at end of lexer context
 		if (cur == '\0') {
 			if (lx->tgt->prev != NULL) {
-				lexer_tgt_close(lx);
+				//lexer_tgt_close(lx);
+				lex_advc(lx);
 				cur = lex_cur(lx);
 			} else {
 				break;
@@ -915,10 +942,11 @@ int lex_expand_macro(lexer *lx, char *ident) {
 
 	
 	//Check for and read function macro arguments
-pfound:	lex_wspace(lx);
 	vector macro_params;
-	vector_init(&macro_params, VECTOR_EMPTY);
-	while (isalnum(lex_cur(lx))) lex_advc(lx);
+pfound:	vector_init(&macro_params, VECTOR_EMPTY);
+	char *prev_pos = lx->tgt->pos;
+	char prev_cch = lx->tgt->cch;
+	lex_wspace(lx);
 	if (lex_cur(lx) == '(') {
 		//Read macro arguments
 		int paren_c = 0;
@@ -966,6 +994,10 @@ pfound:	lex_wspace(lx);
 			}
 		}
 		lex_advc(lx);
+	} else {
+		//Restore whitespace if no argument list was found
+		lx->tgt->pos = prev_pos;
+		lx->tgt->cch = prev_cch;
 	}
 
 	//Expand the macro
@@ -1068,7 +1100,8 @@ reset:	cond = vector_top(&lx->conds);
 }
 
 void lex_adv(lexer *lx) {
-reset:	lex_condskip(lx);
+reset:	if (lx->ahead.type == TOK_END) return;
+	lex_condskip(lx);
 	lex_next(lx, 1);
 	if (lx->ahead.type == TOK_SNS) {
 		lx->m_exp = 0; //Temporarily disable macro expansion
