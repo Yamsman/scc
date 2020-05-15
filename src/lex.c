@@ -158,7 +158,7 @@ reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
 	loc = lx->tgt->loc;
 
 	//Release the current context if the end has been reached
-	if (nchar == '\0') {
+tpaste:	if (nchar == '\0') {
 		//The last context will stay open until the lexer is closed
 		if (lx->tgt->prev == NULL)
 			return '\0';
@@ -237,10 +237,8 @@ reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
 		buf[len] = '\0';
 
 		//Attempt to expand the macro
-		//prev_pos = lx->tgt->pos;
-		//prev_cch = lx->tgt->cch;
-		lx->tgt->pos = cur;
-		lx->tgt->cch = *cur;
+		prev_pos = lx->tgt->pos; prev_cch = lx->tgt->cch;
+		lx->tgt->pos = cur; lx->tgt->cch = *cur;
 		if (!lex_expand_macro(lx, buf)) {
 			is_reset = 1;
 			goto reset;
@@ -250,13 +248,12 @@ reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
 		free(buf);
 	}
 
-
 	/*
 	 * Handle token pasting
 	 */
 	//Only attempt once per chunk of whitespace
 	char *cur = pos;
-	if (isspace(*cur) && !isspace(*lx->tgt->pos))
+	if (isspace(*cur) && !isspace(prev))
 		while (isspace(*cur) && *cur != '\n') cur++;
 
 	//Perform token pasting if a double pound sign exists
@@ -272,6 +269,8 @@ reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
 		loc.col += cur - pos;
 		pos = cur;
 		nchar = *pos;
+		is_reset = 1;
+		goto tpaste;
 	}	
 
 	//Update external values if applicable and return the next character
@@ -295,9 +294,6 @@ char lex_advc(lexer *lx) {
 	int len; s_pos loc;
 	char nc = lex_nchar(lx, &len, &loc);
 	if (nc == '\0') return nc;
-
-	//if (nc == '\n') printf("\\n\n");
-	//else printf("%c : %i\n", nc, nc);
 
 	lx->tgt->cch = nc;
 	lx->tgt->pos += len;
@@ -618,18 +614,7 @@ reset:	nline |= lex_wspace(lx);
 	t.loc = tgt->loc;
 	switch (lex_cur(lx)) {
 		case '\0':
-			//End lexing if end has been reached
-			//Otherwise, go to previous target
-			/*
-			lexer_tgt_close(lx);
-			tgt = lx->tgt;
-			if (tgt == NULL) {
-				t.type = TOK_END;
-				lx->ahead = t;
-				return;
-			}
-			goto reset;
-			*/
+			//End of stream
 			t.type = TOK_END;
 			lx->ahead = t;
 			return;
@@ -670,6 +655,7 @@ reset:	nline |= lex_wspace(lx);
 			break;
 		case '#':
 			t.type = TOK_SNS;
+			lx->m_exp = 0;
 			if (lex_peekc(lx) == '#') {
 				lex_advc(lx);
 				t.type = TOK_DNS;
@@ -677,6 +663,8 @@ reset:	nline |= lex_wspace(lx);
 			} else if (!nline && loc.col != 1) {
 				c_error(&loc, "Stray '#' in source\n");
 			}
+			lex_advc(lx);
+			lx->m_exp = 1;
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
 		case '+':
@@ -863,7 +851,7 @@ num_case:		lex_num(lx, &t);
 			t.type = TOK_END;
 			break;
 	}
-end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR)
+end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR && t.type != TOK_SNS)
 		lex_advc(lx);
 	lx->ahead = t;
 	return;
