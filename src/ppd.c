@@ -10,11 +10,13 @@
 #include "util/vector.h"
 #include "util/map.h"
 
+//All ppd_* functions have macro expansion disabled by default (starting from lex_adv)
+
 void ppd_defparams(lexer *lx, s_type *mtype) {
 	token *t = &lx->ahead;
 	s_pos *loc = &lx->tgt->loc;
 	lex_advc(lx);
-	lex_next(lx, 0);
+	lex_next(lx);
 	if (t->nline) {
 		c_error(loc, "Expected ')' before newline\n");
 		return;
@@ -33,14 +35,14 @@ void ppd_defparams(lexer *lx, s_type *mtype) {
 			break;
 		}
 		vector_add(&mtype->param, param_new(type_new(TYPE_MACRO), t->dat.sval));
-		lex_next(lx, 0);
+		lex_next(lx);
 
 		//Read comma
 		if (t->type != TOK_CMM && t->type != TOK_RPR) {
 			c_error(loc, "Missing comma in macro parameter list\n");
 			break;
 		} else if (t->type == TOK_CMM) {
-			lex_next(lx, 0);
+			lex_next(lx);
 		}
 	}
 }
@@ -106,7 +108,7 @@ void ppd_define(lexer *lx) {
 }
 
 void ppd_error(lexer *lx, int is_warn) {
-	s_pos *loc = &lx->tgt->loc;
+	s_pos loc = lx->tgt->loc;
 
 	//Read message
 	int len = 0;
@@ -128,8 +130,8 @@ void ppd_error(lexer *lx, int is_warn) {
 	buf[len] = '\0';
 
 	//Print error/warning
-	if (is_warn) c_warn(loc, "%s\n", buf);
-	else c_error(loc, "%s\n", buf);
+	if (is_warn) c_warn(&loc, "%s\n", buf);
+	else c_error(&loc, "%s\n", buf);
 
 	free(buf);
 	return;
@@ -197,7 +199,7 @@ done:	return;
 
 void ppd_undef(lexer *lx) {
 	//Read macro name
-	lex_next(lx, 0);
+	lex_next(lx);
 	token mname = lex_peek(lx);
 	if (mname.type != TOK_IDENT)
 		c_error(&lx->tgt->loc, "Invalid macro name '%s'\n", mname.dat.sval);
@@ -221,12 +223,14 @@ int ppd_constexpr(lexer *lx, int *err) {
 	vector_init(&toks, VECTOR_DEFAULT);
 
 	//Get tokens until the end of the line
+	//Expand macros by default, unless the previous token was "defined"
+	//As a special case, function-like macros without parameters do not produce an error
+	lx->m_exp = 1; lx->m_cexpr = 1;
 	int nline = lex_wspace(lx);
 	token t = BLANK_TOKEN;
 	while (!(nline = lex_wspace(lx))) {
-		//Expand macros by default, unless the previous token was "defined"
-		int do_expand = !(t.type == TOK_DEFINED);
-		lex_next(lx, do_expand);
+		lx->m_exp = !(t.type == TOK_DEFINED);
+		lex_next(lx);
 		t = lex_peek(lx);
 
 		//Add the token to the vector
@@ -236,6 +240,7 @@ int ppd_constexpr(lexer *lx, int *err) {
 		*tn = t;
 		vector_push(&toks, tn);
 	}
+	lx->m_exp = 0; lx->m_cexpr = 0;
 
 	//Call the evaluator
 	int res = eval_constexpr(lx, &toks, err);
@@ -262,7 +267,7 @@ void ppd_if(lexer *lx) {
 }
 
 void ppd_ifdef(lexer *lx) {
-	lex_next(lx, 0);
+	lex_next(lx);
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifdef\n");
@@ -273,7 +278,7 @@ void ppd_ifdef(lexer *lx) {
 }
 
 void ppd_ifndef(lexer *lx) {
-	lex_next(lx, 0);
+	lex_next(lx);
 	token t = lex_peek(lx);
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifndef\n");

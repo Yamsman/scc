@@ -6,69 +6,12 @@
 #include "util/vector.h"
 
 enum TOK_TYPES {
-	TOK_END,
-	TOK_SEM,
-	TOK_COL,
-	TOK_CMM,
-	TOK_PRD,
-	TOK_LBR,
-	TOK_RBR,
-	TOK_LPR,
-	TOK_RPR,
-	TOK_LBK,
-	TOK_RBK,
-	TOK_SQT,
-	TOK_DQT,
-	TOK_SNS,
-	TOK_DNS,
-	TOK_QMK,
-	TOK_ADD,
-	TOK_SUB,
-	TOK_ASR,
-	TOK_DIV,
-	TOK_MOD,
-	TOK_AND,
-	TOK_OR,
-	TOK_XOR,
-	TOK_NOT,
-	TOK_TLD,
-	TOK_LTH,
-	TOK_GTH,
-	TOK_LEQ,
-	TOK_GEQ,
-	TOK_EQ,
-	TOK_NEQ,
-	TOK_LOGIC_OR,
-	TOK_LOGIC_AND,
-	TOK_LOGIC_NOT,
-	TOK_INC,
-	TOK_DEC,
-	TOK_PTR,
-	TOK_LSHIFT,
-	TOK_RSHIFT,
-	TOK_ASSIGN,
-	TOK_ASSIGN_ADD,
-	TOK_ASSIGN_SUB,
-	TOK_ASSIGN_MUL,
-	TOK_ASSIGN_DIV,
-	TOK_ASSIGN_MOD,
-	TOK_ASSIGN_AND,
-	TOK_ASSIGN_OR,
-	TOK_ASSIGN_XOR,
-	TOK_ASSIGN_LSHIFT,
-	TOK_ASSIGN_RSHIFT,
-
-	//Keywords
-	#define kw(id, str) id,
-	#include "kw.inc"
+	//Get token and keyword types from definitions in tok.inc
+	#define tok(id, estr, str) id,
+	#define kw(id, estr, str) id,
+	#include "tok.inc"
 	#undef kw
-
-	//Special tokens
-	TOK_DEFINED,
-	TOK_CONST,
-	TOK_STR,
-	TOK_KW,
-	TOK_IDENT
+	#undef tok
 };
 
 enum TGT_TYPE {
@@ -121,12 +64,15 @@ typedef struct LEXER {
 	struct VECTOR conds;		//Preprocessor conditions
 	struct SYMTABLE stb;		//Symbol table
 	int m_exp;			//Flag for enabling/disabling macro expansion
+	int m_cexpr;			//Flag for ignoring parameter-less macro errors
 } lexer;
 
+//Keyword table initialization functions
 extern struct TOKEN BLANK_TOKEN;
 void init_kwtable();
 void close_kwtable();
 
+//Lexer top-level context control functions
 struct LEXER *lexer_init(char *fname);
 int lex_open_file(struct LEXER *lx, char *fname);
 void lexer_close(struct LEXER *lx);
@@ -142,21 +88,22 @@ char lex_peekc(struct LEXER *lx);
 char lex_advc(struct LEXER *lx);
 
 //Used internally for processing tokens
-void lex_next(struct LEXER *lx, int m_exp);
+void lex_next(struct LEXER *lx);
 void lex_ident(struct LEXER *lx, struct TOKEN *t);
 void lex_num(struct LEXER *lx, struct TOKEN *t);
 void lex_str(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
-int lex_expand_macro(struct LEXER *lx, char *ident);
+int lex_expand_macro(struct LEXER *lx, char *ident, struct SRC_POS *loc);
 
 //Used externally to control the lexer
 struct TOKEN lex_peek(struct LEXER *lx);
 void lex_adv(struct LEXER *lx);
 void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);
-struct SRC_POS lex_loc(struct LEXER *lx);
 
 //Helper functions
 int is_type_spec(struct TOKEN t);
 struct TOKEN_NODE *make_tok_node(struct TOKEN t);
+const char *tok_str(token t, int nflag);
+void lexer_debug();
 
 #endif

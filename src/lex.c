@@ -14,9 +14,11 @@
 map kw_table;
 void init_kwtable() {
 	map_init(&kw_table, 40);
-	#define kw(id, str) map_insert(&kw_table, str, (void*)id);
-	#include "kw.inc"
+	#define tok(id, estr, str)
+	#define kw(id, estr, str) map_insert(&kw_table, str, (void*)id);
+	#include "tok.inc"
 	#undef kw
+	#undef tok
 	return;
 }
 
@@ -43,6 +45,7 @@ lexer *lexer_init(char *fname) {
 	}
 	symtable_init(&lx->stb);
 	lx->m_exp = 1;
+	lx->m_cexpr = 0;
 
 	return lx;
 }
@@ -158,7 +161,7 @@ reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
 	loc = lx->tgt->loc;
 
 	//Release the current context if the end has been reached
-tpaste:	if (nchar == '\0') {
+tpaste:	if (nchar == '\0' && lx->m_exp) {
 		//The last context will stay open until the lexer is closed
 		if (lx->tgt->prev == NULL)
 			return '\0';
@@ -223,6 +226,7 @@ tpaste:	if (nchar == '\0') {
 		int bsize = 256;
 		char *cur = pos;
 		char *buf = malloc(bsize);
+		s_pos m_loc = lx->tgt->loc;
 		while (isalnum(*cur) || *cur == '_') {
 			//Resize if needed
 			if (len+2 == bsize) {
@@ -238,14 +242,14 @@ tpaste:	if (nchar == '\0') {
 
 		//Attempt to expand the macro
 		prev_pos = lx->tgt->pos; prev_cch = lx->tgt->cch;
+		s_pos prev_loc = loc;
 		lx->tgt->pos = cur; lx->tgt->cch = *cur;
-		if (!lex_expand_macro(lx, buf)) {
+		if (!lex_expand_macro(lx, buf, &m_loc)) {
 			is_reset = 1;
 			goto reset;
 		}
-		lx->tgt->pos = prev_pos;
-		lx->tgt->cch = prev_cch;
-		free(buf);
+		lx->tgt->pos = prev_pos; lx->tgt->cch = prev_cch;
+		loc = prev_loc;
 	}
 
 	/*
@@ -587,7 +591,7 @@ void lex_str(lexer *lx, token *t) {
 
 //Processes the next token
 //If m_exp is nonzero, macros will be expanded
-void lex_next(lexer *lx, int m_exp) {
+void lex_next(lexer *lx) {
 	token t = {-1, -1, lx->tgt->loc, 0, NULL};
 	lex_target *tgt = lx->tgt;
 	s_pos loc = tgt->loc;
@@ -612,6 +616,7 @@ reset:	nline |= lex_wspace(lx);
 
 	//Process the next character
 	t.loc = tgt->loc;
+	int noadvc = 0;
 	switch (lex_cur(lx)) {
 		case '\0':
 			//End of stream
@@ -631,7 +636,10 @@ reset:	nline |= lex_wspace(lx);
 		case ')':	t.type = TOK_RPR; 	break;
 		case '[':	t.type = TOK_LBK;	break;
 		case ']':	t.type = TOK_RBK;	break;
-		case '"':	lex_str(lx, &t);	break;
+		case '"':
+			lex_str(lx, &t);
+			noadvc = 1;
+			break;
 		case '\'':
 			//Character literal
 			lex_advc(lx);
@@ -652,6 +660,7 @@ reset:	nline |= lex_wspace(lx);
 
 			t.dat.ival = val;
 			t.type = TOK_CONST;
+			noadvc = 1;
 			break;
 		case '#':
 			t.type = TOK_SNS;
@@ -663,7 +672,8 @@ reset:	nline |= lex_wspace(lx);
 			} else if (!nline && loc.col != 1) {
 				c_error(&loc, "Stray '#' in source\n");
 			}
-			lex_advc(lx);
+			lex_advc(lx); //Advance manually; do not attempt to expand directive
+			noadvc = 1;
 			lx->m_exp = 1;
 			break;
 		case '?': 	t.type = TOK_QMK; 	break;
@@ -768,7 +778,7 @@ reset:	nline |= lex_wspace(lx);
 			}
 			break;
 		case '~':
-			t.type = TOK_NOT;
+			t.type = TOK_TLD;
 			break;
 		case '=':
 			t.type = TOK_ASSIGN;
@@ -777,7 +787,7 @@ reset:	nline |= lex_wspace(lx);
 			lex_advc(lx);
 			break;
 		case '!':
-			t.type = TOK_LOGIC_NOT;
+			t.type = TOK_NOT;
 			if (lex_peekc(lx) == '=') {
 				t.type = TOK_NEQ;
 				lex_advc(lx);
@@ -837,7 +847,7 @@ reset:	nline |= lex_wspace(lx);
 				free(t.dat.sval);
 				t.dat.sval = NULL;
 			}
-
+			noadvc = 1;
 			} break;
 		case '0': case '1': case '2': case '3': case '4':
 		case '5': case '6': case '7': case '8': case '9':
@@ -845,13 +855,15 @@ reset:	nline |= lex_wspace(lx);
 num_case:		lex_num(lx, &t);
 			//free(t.dtype); //temporary
 			t.type = TOK_CONST;
+			noadvc = 1;
 			break;
 		default: 
 			//illegal char
 			t.type = TOK_END;
 			break;
 	}
-end:	if (t.type != TOK_IDENT && t.type != TOK_CONST && t.type != TOK_STR && t.type != TOK_SNS)
+	//Unless the specific case handled it manually, advance to the next char
+end:	if (!noadvc)
 		lex_advc(lx);
 	lx->ahead = t;
 	return;
@@ -864,7 +876,7 @@ int lex_wspace(lexer *lx) {
 	char cur = lex_cur(lx);
 	for (;;) {
 		//Handle whitespace checks at end of lexer context
-		if (cur == '\0') {
+		if (cur == '\0' && lx->m_exp) {
 			if (lx->tgt->prev != NULL) {
 				//lexer_tgt_close(lx);
 				lex_advc(lx);
@@ -885,7 +897,7 @@ int lex_wspace(lexer *lx) {
 
 //Sets the lexer to expand a macro
 //Returns zero if a macro was identified and expanded
-int lex_expand_macro(lexer *lx, char *ident) {
+int lex_expand_macro(lexer *lx, char *ident, s_pos *loc) {
 	lex_target *tgt = lx->tgt;
 	symbol *s = symtable_search(&lx->stb, ident);
 	lx->m_exp = 0; //Temporarily disable macro expansion
@@ -927,13 +939,14 @@ int lex_expand_macro(lexer *lx, char *ident) {
 		lx->m_exp = 1;
 		return -1;
 	}
-
 	
 	//Check for and read function macro arguments
 	vector macro_params;
 pfound:	vector_init(&macro_params, VECTOR_EMPTY);
+	int m_error = 0;
 	char *prev_pos = lx->tgt->pos;
 	char prev_cch = lx->tgt->cch;
+	s_pos prev_loc = lx->tgt->loc;
 	lex_wspace(lx);
 	if (lex_cur(lx) == '(') {
 		//Read macro arguments
@@ -976,6 +989,7 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 			//Post-read checks
 			if (cur == ',') cur = lex_advc(lx);
 			if (cur == '\0') {
+				m_error = -1;
 				c_error(&lx->tgt->loc,
 					"Unexpected end of input in macro parameter list\n");
 				break;
@@ -983,24 +997,41 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 		}
 		lex_advc(lx);
 	} else {
-		//Restore whitespace if no argument list was found
+		//Rewind and restore whitespace if no argument list was found
 		lx->tgt->pos = prev_pos;
 		lx->tgt->cch = prev_cch;
+		lx->tgt->loc = prev_loc;
+	}
+	
+	//Ensure the number of arguments matches the amount specified in the macro definition
+	if (macro_params.len != s->type->param.len) {
+		m_error = -1;
+		if (!lx->m_cexpr) { //Not an error in preprocessor constant expressions
+			c_error(loc, "Incorrect number of arguments to function-like macro '%s' "
+				"(expected %i, read %i)\n",
+				ident, s->type->param.len, macro_params.len);
+		}
 	}
 
-	//Expand the macro
-	lexer_tgt_open(lx, m_name, TGT_MACRO, m_exp);
-	tgt = lx->tgt;
+	//If no issues have been encountered, expand the macro
+	if (!m_error) {
+		lexer_tgt_open(lx, m_name, TGT_MACRO, m_exp);
+		tgt = lx->tgt;
 
-	//Set definitions for each parameter
-	for (int i=0; i<macro_params.len; i++)
-		vector_add(&tgt->mp_exp, macro_params.table[i]);
+		//Set definitions for each parameter
+		for (int i=0; i<macro_params.len; i++)
+			vector_add(&tgt->mp_exp, macro_params.table[i]);
+	} else {
+		//Otherwise, free any arguments
+		for (int i=0; i<macro_params.len; i++)
+			free(macro_params.table[i]);
+	}
 
 	//Free the macro name and parameters
 	vector_close(&macro_params);
 	free(ident);
 	lx->m_exp = 1;
-	return 0;
+	return m_error;
 }
 
 //Perform preprocessing
@@ -1058,6 +1089,7 @@ int is_condppd(int type) {
 void lex_condskip(lexer *lx) {
 	lex_cond *cond;
 	int had_nl = 0;
+	lx->m_exp = 0;
 reset:	cond = vector_top(&lx->conds);
 	if (cond != NULL && (!cond->is_true || cond->was_true)) {
 		//Repeat until a conditional directive changes the state
@@ -1067,7 +1099,7 @@ reset:	cond = vector_top(&lx->conds);
 			if ((nline || had_nl) && lex_cur(lx) == '#') {
 				if (cur == '\n') had_nl = 1;
 				lex_advc(lx);
-				lex_next(lx, 0);
+				lex_next(lx);
 
 				//Only perform conditional directives
 				token t = lex_peek(lx);
@@ -1084,16 +1116,17 @@ reset:	cond = vector_top(&lx->conds);
 		if (cur == '\0')
 			c_error(&lx->tgt->loc, "Expected #endif before end of input\n");
 	}
+	lx->m_exp = 1;
 	return;
 }
 
 void lex_adv(lexer *lx) {
 reset:	if (lx->ahead.type == TOK_END) return;
 	lex_condskip(lx);
-	lex_next(lx, 1);
+	lex_next(lx);
 	if (lx->ahead.type == TOK_SNS) {
 		lx->m_exp = 0; //Temporarily disable macro expansion
-		lex_next(lx, 0);
+		lex_next(lx);
 		lex_ppd(lx);
 		lx->m_exp = 1;
 		goto reset;
@@ -1108,6 +1141,9 @@ void lex_unget(lexer *lx, token_n *n) {
 	return;
 }
 
+/*
+ * Helper functions
+ */
 int is_type_spec(token t) {
 	if (t.type - TOK_KW_VOID >= 0 && 
 	    t.type - TOK_KW_UNION <= TOK_KW_UNION - TOK_KW_VOID)
@@ -1120,4 +1156,41 @@ token_n *make_tok_node(token t) {
 	node->t = t;
 	node->next = NULL;
 	return node;
+}
+
+//Returns a string describing the token
+//If nflag is nonzero, the "natural" representation will be printed
+const char *tok_str(token t, int nflag) {
+	//List is built with both enum and natural representations
+	//n*2 -> enum, n*2+1 -> natural
+	char *tstr_list[] = {
+		#define tok(id, estr, str) estr, str,
+		#define kw(id, estr, str) estr, str,
+		#include "tok.inc"
+		#undef kw
+		#undef tok
+	};
+
+	//Check for special cases
+	static char buf[256];
+	switch (t.type) {
+		case TOK_CONST:
+			if (t.dtype->kind == TYPE_FLOAT)
+				snprintf(buf, 256, "%lf", t.dat.fval);
+			else if (t.dtype->is_signed)
+				snprintf(buf, 256, "%lld", t.dat.ival);
+			else
+				snprintf(buf, 256, "%llu", t.dat.uval);
+			return buf;
+		case TOK_STR:
+		case TOK_IDENT:
+			return t.dat.sval;
+	}
+
+	return tstr_list[t.type*2 + (nflag != 0)];
+}
+
+void lexer_debug() {
+	/*
+	*/
 }

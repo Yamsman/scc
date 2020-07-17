@@ -12,8 +12,8 @@
 int rankof(int op) {
 	switch (op) {
 		case TOK_DEFINED:	return 13;
-		case TOK_LOGIC_NOT:
-		case TOK_NOT:		return 12;
+		case TOK_NOT:
+		case TOK_TLD:		return 12;
 		case TOK_ASR:
 		case TOK_DIV:
 		case TOK_MOD:		return 11;
@@ -43,8 +43,8 @@ int rankof(int op) {
 int is_unary(int op) {
 	switch (op) {
 		case TOK_DEFINED:
-		case TOK_LOGIC_NOT:
 		case TOK_NOT:
+		case TOK_TLD:
 			return 1;
 	}
 	return 0;
@@ -54,8 +54,8 @@ int is_unary(int op) {
 long long do_op(int op, int lhs, int rhs, int trs) {
 	switch (op) {
 		case TOK_QMK:		return (lhs) ? rhs : trs;
-		case TOK_LOGIC_NOT:	return !lhs;
-		case TOK_NOT:		return ~lhs;
+		case TOK_NOT:		return !lhs;
+		case TOK_TLD:		return ~lhs;
 		case TOK_ASR:		return lhs * rhs;
 		case TOK_DIV:		return lhs / rhs;
 		case TOK_MOD:		return lhs % rhs;
@@ -106,8 +106,10 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 	//Process input token by token
 	int i = 0;
 	int eflag_prev = c_errflag;
+	s_pos *last_loc = NULL;
 	for (; i<input->len; i++) {
 		token *t = input->table[i];
+		last_loc = &t->loc;
 		if (t->type == TOK_CONST) {
 			//Ensure the constant is an integer
 			if (t->dtype->kind == TYPE_FLOAT) {
@@ -184,13 +186,13 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 	//Finish calculations if the condition has ended
 	while (ops.len > 0) {
 		if (vals.len < 1) {
-			c_error(&lx->tgt->loc, "Operator in constant expression has no RHS\n");
+			c_error(last_loc, "Operator in constant expression has no RHS\n");
 			break;
 		}
 		do_calc(&ops, &vals);
 	}
 	if (vals.len > 1) {
-		c_error(&lx->tgt->loc, "Missing operator in constant expression\n");
+		c_error(last_loc, "Missing operator in constant expression\n");
 	}
 
 	//Get result
