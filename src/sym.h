@@ -104,7 +104,7 @@ int type_compare(struct TYPE *a, struct TYPE *b);
 int type_sizeof(struct TYPE *t);
 
 //Parameter functions
-struct PARAM *param_new();
+struct PARAM *param_new(struct TYPE *type, char *name);
 void param_del(struct PARAM *p);
 void memb_del(struct PARAM *m);
 

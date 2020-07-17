@@ -101,7 +101,7 @@ void lex_adv(struct LEXER *lx);
 void lex_unget(struct LEXER *lx, struct TOKEN_NODE *t);
 
 //Helper functions
-int is_type_spec(struct TOKEN t);
+int is_type_spec(struct LEXER *lx, struct TOKEN t);
 struct TOKEN_NODE *make_tok_node(struct TOKEN t);
 const char *tok_str(token t, int nflag);
 void lexer_debug();

@@ -242,12 +242,6 @@ int ppd_constexpr(lexer *lx, int *err) {
 	}
 	lx->m_exp = 0; lx->m_cexpr = 0;
 
-	for (int i=0; i<toks.len; i++) {
-		printf("%s ", tok_str(*(token*)toks.table[i], 0));
-		s_pos x = ((token*)toks.table[i])->loc;
-		printf("(%i:%i)\n", x.line, x.col);
-	}
-
 	//Call the evaluator
 	int res = eval_constexpr(lx, &toks, err);
 	

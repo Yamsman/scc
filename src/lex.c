@@ -248,6 +248,8 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 		if (!lex_expand_macro(lx, buf, &m_loc)) {
 			is_reset = 1;
 			goto reset;
+		} else {
+			free(buf);
 		}
 		lx->tgt->pos = prev_pos; lx->tgt->cch = prev_cch;
 		loc = prev_loc;
@@ -1148,10 +1150,21 @@ void lex_unget(lexer *lx, token_n *n) {
 /*
  * Helper functions
  */
-int is_type_spec(token t) {
-	if (t.type - TOK_KW_VOID >= 0 && 
-	    t.type - TOK_KW_UNION <= TOK_KW_UNION - TOK_KW_VOID)
-		return 1;
+int is_type_spec(lexer *lx, token t) {
+	symbol *td;
+	switch (t.type) {
+		case TOK_KW_VOID: case TOK_KW_CHAR: case TOK_KW_SHORT:
+		case TOK_KW_FLOAT: case TOK_KW_TYPEDEF: case TOK_KW_EXTERN:
+		case TOK_KW_STATIC: case TOK_KW_AUTO: case TOK_KW_REGISTER:
+		case TOK_KW_SIGNED: case TOK_KW_UNSIGNED: case TOK_KW_CONST:
+		case TOK_KW_VOLATILE: case TOK_KW_INT: case TOK_KW_DOUBLE:
+		case TOK_KW_LONG: case TOK_KW_STRUCT: case TOK_KW_UNION:
+		case TOK_KW_ENUM:
+			return 1;
+		case TOK_IDENT:
+			td = symtable_search(&lx->stb, t.dat.sval);
+			return (td->btype->s_class == CLASS_TYPEDEF);
+	}
 	return 0;
 }
 

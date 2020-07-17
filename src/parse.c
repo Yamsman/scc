@@ -24,9 +24,8 @@ vector parse_fparam_list(lexer *lx);
 ast_n *parse_fdef(lexer *lx);
 
 vector parse_smemb(lexer *lx);
-void parse_sdef(lexer *lx, s_type *type);
+s_type *parse_sdef(lexer *lx);
 void parse_edef(lexer *lx);
-s_type *parse_tdef(lexer *lx);
 
 ast_n *parse_expr(lexer *lx);
 int parse_constexpr(lexer *lx);
@@ -118,8 +117,6 @@ ast_n *parse(lexer *lx) {
  * 		allocates the ast_decl
  * 		loops for each comma delimited declaration
  */
-
-//ast_decl *parse_decl(spec *type);
 ast_n *parse_decl(lexer *lx) {
 	//Get specifiers
 	s_type *type = parse_decl_spec(lx);
@@ -133,7 +130,7 @@ ast_n *parse_decl(lexer *lx) {
 		if (type->kind != TYPE_STRUCT && type->kind != TYPE_UNION)
 			c_error(&t.loc, "Declaration declares nothing\n");
 		lex_adv(lx);
-		//type_del(type);
+		type_del(type);
 		return NULL;
 	}
 
@@ -170,13 +167,13 @@ ast_n *parse_decl(lexer *lx) {
 	return node;
 }
 
-//TODO: type qualifiers
 s_type *parse_decl_spec(lexer *lx) {
 	s_type *type = type_new(TYPE_UNDEF);
 
 	/*
 	 * Loop and process specifiers
 	 */
+	int from_typedef = 0;
 	int is_long = 0, is_signed = 0, is_unsigned = 0;
 	s_pos begin = lex_peek(lx).loc;
 	for (;;) {
@@ -215,17 +212,42 @@ s_type *parse_decl_spec(lexer *lx) {
 				break;
 		} 
 
+		//Check for a user defined type
+		if (t.type == TOK_IDENT) {
+			symbol *td = symtable_search(&lx->stb, t.dat.sval);
+			if (type->kind != TYPE_UNDEF) goto ts_end;
+			if (td == NULL || td->btype->s_class != CLASS_TYPEDEF) goto ts_end;
+
+			//Clone the predefined type
+			s_type *usr_type = type_clone(td->type);
+			s_type *usr_btype = usr_type;
+			while (usr_btype->ref != NULL)
+				usr_btype = usr_btype->ref;
+			usr_btype->s_class = CLASS_UNDEF;
+
+			//Copy over class/qualifiers if needed
+			usr_btype->s_class = type->s_class;
+			usr_btype->is_const = type->is_const;
+			usr_btype->is_volatile = type->is_volatile;
+			
+			type_del(type);
+			type = usr_type;
+			lex_adv(lx);
+			continue;
+		} 
+
 		//Process specifier
+		s_type *su_type;
 		switch (t.type) {
 			case TOK_KW_VOID: 	type->kind = TYPE_VOID; break;
 			case TOK_KW_CHAR: 	type->kind = TYPE_INT; type->size = 1; break;
 			case TOK_KW_SHORT: 	type->kind = TYPE_INT; type->size = 2; break;
 			case TOK_KW_FLOAT:	type->kind = TYPE_FLOAT; type->size = 4; break;
+			case TOK_KW_TYPEDEF:	type->s_class = CLASS_TYPEDEF;	break;
 			case TOK_KW_EXTERN:	type->s_class = CLASS_EXTERN;	break;
 			case TOK_KW_STATIC:	type->s_class = CLASS_STATIC;	break;
 			case TOK_KW_AUTO:	type->s_class = CLASS_AUTO; 	break;
 			case TOK_KW_REGISTER:	type->s_class = CLASS_REGISTER;	break;
-			case TOK_KW_TYPEDEF:	type->s_class = CLASS_TYPEDEF;	break;
 			case TOK_KW_SIGNED:	type->is_signed = 1;		break;
 			case TOK_KW_UNSIGNED:	type->is_signed = 0;		break;
 			case TOK_KW_CONST:	type->is_const = 1;		break;
@@ -273,8 +295,17 @@ s_type *parse_decl_spec(lexer *lx) {
 				break;
 			case TOK_KW_STRUCT:
 			case TOK_KW_UNION:
-				parse_sdef(lx, type);
+				//Read struct/union type
+				su_type = parse_sdef(lx);
 				lex_unget(lx, make_tok_node(lex_peek(lx)));
+				if (su_type == NULL) break;
+
+				//Merge with current type
+				su_type->s_class = type->s_class;
+				su_type->is_const = type->is_const;
+				su_type->is_volatile = type->is_volatile;
+				type_del(type);
+				type = su_type; 
 				break;
 			case TOK_KW_ENUM:
 				parse_edef(lx);
@@ -374,10 +405,10 @@ s_type *parse_decltr(lexer *lx, s_type *type, token *vname) {
 		lex_adv(lx);
 		s_type *n_type = parse_decltr(lx, NULL, vname);
 		
-		//Missing '('
+		//Missing ')'
 		token t = lex_peek(lx);
 		if (lex_peek(lx).type != TOK_RPR)
-			c_error(&t.loc, "Missing ']' after array size\n");
+			c_error(&t.loc, "Missing ')' in declarator\n");
 		lex_adv(lx);
 
 		//Attach trailing array/func types to n_type
@@ -426,9 +457,14 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	decl_n->sym = s;
 
 	//Check for and parse initialization
-	if (lex_peek(lx).type == TOK_ASSIGN) {
+	token t = lex_peek(lx);
+	if (t.type == TOK_ASSIGN) {
 		lex_adv(lx);
 		//decl_n->init = parse_decl_init(lx, node);
+		
+		//Typedefs cannot be initialized
+		if (base_type->s_class == CLASS_TYPEDEF)
+			c_error(&t.loc, "Attempt to initialize a typedef\n");
 	}
 
 	return node;
@@ -603,8 +639,8 @@ vector parse_sdef_body(lexer *lx) {
 }
 
 //Parse a struct type
-//TODO: s_param -> s_memb
-void parse_sdef(lexer *lx, s_type *type) {
+s_type *parse_sdef(lexer *lx) {
+	s_type *type = type_new(TYPE_UNDEF);
 	switch (lex_peek(lx).type) {
 		case TOK_KW_STRUCT:
 			type->kind = TYPE_STRUCT;
@@ -613,7 +649,8 @@ void parse_sdef(lexer *lx, s_type *type) {
 			type->kind = TYPE_UNION;
 			break;
 		default:
-			return;
+			type_del(type);
+			return NULL;
 	}
 	lex_adv(lx);
 
@@ -639,7 +676,8 @@ void parse_sdef(lexer *lx, s_type *type) {
 	if (tname == NULL) {
 		if (type->param.len == VECTOR_EMPTY) {
 			c_error(&aloc, "Expected '{' or identifier before ...\n");
-			return;
+			type_del(type);
+			return NULL;
 		} 
 	} else {
 		symbol *s = NULL;
@@ -650,16 +688,16 @@ void parse_sdef(lexer *lx, s_type *type) {
 			if (s == NULL) {
 				c_error(&nloc, "Undefined struct '%s'\n", tname);
 				free(tname);
-				return;
+				return NULL;
 			}
 			free(tname);
-			type = s->type;
+			type = type_clone(s->type);
 		} else {
-			s = symtable_def(&lx->stb, tname, type, &nloc);
+			s = symtable_def(&lx->stb, tname, type_clone(type), &nloc);
 		}
 	}
 
-	return;
+	return type;
 }
 
 //Parses a single enumeration
@@ -734,10 +772,6 @@ void parse_edef(lexer *lx) {
 	}
 
 	return;
-}
-
-s_type *parse_tdef(lexer *lx) {
-
 }
 
 /*
@@ -1173,7 +1207,7 @@ ast_n *parse_expr_postfix(lexer *lx) {
 		case TOK_LPR: //Function calls
 			//Check for a cast expression
 			lex_adv(lx);
-			if (is_type_spec(lex_peek(lx))) {
+			if (is_type_spec(lx, lex_peek(lx))) {
 				lex_unget(lx, make_tok_node(lex_peek(lx)));
 				lex_unget(lx, make_tok_node(t));
 				break;
@@ -1255,7 +1289,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 			lex_adv(lx);
 			
 			//Check for a cast expression
-			if (is_type_spec(lex_peek(lx))) {
+			if (is_type_spec(lx, lex_peek(lx))) {
 				lex_unget(lx, make_tok_node(lex_peek(lx)));
 				lex_unget(lx, make_tok_node(t));
 				break;
@@ -1357,7 +1391,7 @@ ast_n *parse_stmt_cmpd(lexer *lx) {
 
 		//Parse a statement or a declaration
 		ast_n *node;
-		if (is_type_spec(lex_peek(lx))) {
+		if (is_type_spec(lx, lex_peek(lx))) {
 			node = parse_decl(lx);
 		} else {
 			node = parse_stmt(lx);
@@ -1454,7 +1488,7 @@ ast_n *parse_stmt_for(lexer *lx) {
 
 	//Parse either a declaration or expression statement
 	ast_n *cond[3] = {0};
-	if (is_type_spec(lex_peek(lx))) {
+	if (is_type_spec(lx, lex_peek(lx))) {
 		cond[0] = parse_decl(lx);
 	} else { 
 		cond[0] = parse_stmt_expr(lx);

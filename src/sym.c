@@ -200,8 +200,21 @@ void type_del(s_type *t) {
 }
 
 s_type *type_clone(s_type *from) {
+	if (from == NULL) return NULL;
 	s_type *type = malloc(sizeof(struct TYPE));
 	*type = *from;
+	type->ref = type_clone(from->ref);
+	type->ret = type_clone(from->ret);
+
+	//Copy parameters
+	vector_init(&type->param, VECTOR_EMPTY);
+	for (int i=0; i<from->param.len; i++) {
+		s_param *p = from->param.table[i];
+		char *pname = malloc(strlen(p->name)+1);
+		strncpy(pname, p->name, strlen(p->name)+1);
+		s_param *pclone = param_new(type_clone(p->type), pname);
+		vector_add(&type->param, pclone);
+	}
 	return type;
 }
 
