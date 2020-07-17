@@ -8,9 +8,6 @@ Major features that aren't implemented yet:
 
 ### Lexical analysis and preprocessing
 * User-defined type recognition
-* Escape characters
-* Function macro argument expansion
-* Backslash line concatenation
 
 ### Parsing
 * Initializers
