@@ -145,11 +145,12 @@ char lex_cur(lexer *lx) {
 //Returns the next character
 //If not NULL, the integer pointed to by len will be set to the number of characters processed
 //If not NULL, the struct pointed to by nloc will be set to the resultant source location
-char lex_nchar(lexer *lx, int *len, s_pos *nloc) {
+//If pflag != 0, the reset flag will be held for context switches during lookahead
+char lex_nchar(lexer *lx, int *len, s_pos *nloc, int pflag) {
 	s_pos loc;
 	char *pos;
 	char nchar;
-	int is_reset = 0;
+	static int is_reset = 0;
 
 	/*
 	 * Move to the next character
@@ -285,18 +286,21 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 		else
 			*nloc = lx->tgt->loc;
 	}
+	if (!pflag)
+		is_reset = 0;
 	return nchar;
 }
 
 //Looks ahead by one character but does not advance the lexer
+//However, context changes are still possible
 char lex_peekc(lexer *lx) {
-	return lex_nchar(lx, NULL, NULL);
+	return lex_nchar(lx, NULL, NULL, 1);
 }
 
 //Advances the lexer by one character
 char lex_advc(lexer *lx) {
 	int len; s_pos loc;
-	char nc = lex_nchar(lx, &len, &loc);
+	char nc = lex_nchar(lx, &len, &loc, 0);
 	if (nc == '\0') return nc;
 
 	lx->tgt->cch = nc;
@@ -1088,7 +1092,7 @@ int is_condppd(int type) {
  */
 void lex_condskip(lexer *lx) {
 	lex_cond *cond;
-	int had_nl = 0;
+	int had_nl = 1;
 	lx->m_exp = 0;
 reset:	cond = vector_top(&lx->conds);
 	if (cond != NULL && (!cond->is_true || cond->was_true)) {

@@ -224,12 +224,11 @@ int ppd_constexpr(lexer *lx, int *err) {
 
 	//Get tokens until the end of the line
 	//Expand macros by default, unless the previous token was "defined"
-	//As a special case, function-like macros without parameters do not produce an error
+	//Function-like macros without parameters do not produce an error
 	lx->m_exp = 1; lx->m_cexpr = 1;
 	int nline = lex_wspace(lx);
 	token t = BLANK_TOKEN;
 	while (!(nline = lex_wspace(lx))) {
-		lx->m_exp = !(t.type == TOK_DEFINED);
 		lex_next(lx);
 		t = lex_peek(lx);
 
@@ -239,8 +238,15 @@ int ppd_constexpr(lexer *lx, int *err) {
 			t.type = TOK_DEFINED;
 		*tn = t;
 		vector_push(&toks, tn);
+		lx->m_exp = !(t.type == TOK_DEFINED);
 	}
 	lx->m_exp = 0; lx->m_cexpr = 0;
+
+	for (int i=0; i<toks.len; i++) {
+		printf("%s ", tok_str(*(token*)toks.table[i], 0));
+		s_pos x = ((token*)toks.table[i])->loc;
+		printf("(%i:%i)\n", x.line, x.col);
+	}
 
 	//Call the evaluator
 	int res = eval_constexpr(lx, &toks, err);
