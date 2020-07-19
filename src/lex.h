@@ -87,6 +87,8 @@ char lex_nchar(struct LEXER *lx, int *len, struct SRC_POS *loc, int pflag);
 char lex_cur(struct LEXER *lx);
 char lex_peekc(struct LEXER *lx);
 char lex_advc(struct LEXER *lx);
+int lex_expand_macro(struct LEXER *lx, char *ident, struct SRC_POS *m_loc,
+		     char **cpos, char *cch, struct SRC_POS *cloc);
 
 //Used internally for processing tokens
 void lex_next(struct LEXER *lx);
@@ -94,7 +96,6 @@ void lex_ident(struct LEXER *lx, struct TOKEN *t);
 void lex_num(struct LEXER *lx, struct TOKEN *t);
 void lex_str(struct LEXER *lx, struct TOKEN *t);
 int lex_wspace(struct LEXER *lx);
-int lex_expand_macro(struct LEXER *lx, char *ident, struct SRC_POS *loc);
 
 //Used externally to control the lexer
 struct TOKEN lex_peek(struct LEXER *lx);

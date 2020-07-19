@@ -99,7 +99,7 @@ void lexer_tgt_open(lexer *lx, char *name, int type, char *buf) {
 		n_tgt->loc = lx->tgt->loc;
 	} else {
 		n_tgt->loc.line = 1;
-		n_tgt->loc.col = 1;
+		n_tgt->loc.col = 0;
 		n_tgt->loc.fname = name;
 	}
 
@@ -143,13 +143,13 @@ char lex_prcc(lexer *lx, char **cpos, char *cch, s_pos *cloc) {
 	char *pos;
 	char nchar;
 	s_pos loc;
-	static int is_reset = 0;
 	if (cpos == NULL || cch == NULL || cloc == NULL) return '\0';
 
 	/*
 	 * Move to the next character
 	 */
-reset:	pos = *(cpos)+1;
+	int is_reset = (cloc->col == 0);
+reset:	pos = (is_reset) ? *cpos : *(cpos)+1;
 	nchar = *pos;
 	loc = *cloc;
 
@@ -236,19 +236,18 @@ reset:	pos = *(cpos)+1;
 char lex_nchar(lexer *lx, int *len, s_pos *nloc, int pflag) {
 	char *pos, *prev_pos;
 	char cch, prev_cch;
-	s_pos loc;
+	s_pos loc, prev_loc;
 	
 	/*
 	 * Get the next character
 	 */
-	//char *prev_pos = pos;
-	//char prev_cch = cch;
 	static int is_reset = 0;
+	int is_start = (lx->tgt->loc.col == 0);
 reset:	pos = lx->tgt->pos;
 	cch = lx->tgt->cch;
 	loc = lx->tgt->loc;
-	if (!is_reset)
-		lex_prcc(lx, &pos, &cch, &loc);
+	if (!is_reset) lex_prcc(lx, &pos, &cch, &loc);
+	if (is_start) lx->tgt->loc = loc;
 
 	//Release the current context if the end has been reached
 	if (cch == '\0' && lx->m_exp) {
@@ -264,15 +263,17 @@ reset:	pos = lx->tgt->pos;
 	/*
 	 * Macro expansion
 	 * Only attempt if currently at beginning of an identifier and expansion is enabled
-	char prev = (is_reset) ? '\0' : *lx->tgt->pos;
+	*/
+	char prev = (is_reset || is_start) ? '\0' : *lx->tgt->pos;
+	prev_pos = pos; prev_cch = cch; prev_loc = loc;
 	if (lx->m_exp && (!isalpha(prev) && prev != '_') && (isalpha(cch) || cch == '_')) {
 		//Read identifier
 		int len = 0;
 		int bsize = 256;
-		char *cur = pos;
+		char cur = cch;
 		char *buf = malloc(bsize);
 		s_pos m_loc = lx->tgt->loc;
-		while (isalnum(*cur) || *cur == '_') {
+		while (isalnum(cur) || cur == '_') {
 			//Resize if needed
 			if (len+2 == bsize) {
 				bsize *= 2;
@@ -280,25 +281,22 @@ reset:	pos = lx->tgt->pos;
 			}
 
 			//Copy character to buffer
-			buf[len++] = *cur;
-			cur++;
+			buf[len++] = cur;
+			cur = lex_prcc(lx, &pos, &cch, &loc);
 		}
 		buf[len] = '\0';
 
 		//Attempt to expand the macro
-		prev_pos = lx->tgt->pos; prev_cch = lx->tgt->cch;
-		s_pos prev_loc = *nloc;
-		lx->tgt->pos = cur; lx->tgt->cch = *cur;
-		if (!lex_expand_macro(lx, buf, &m_loc)) {
+		if (!lex_expand_macro(lx, buf, &m_loc, &pos, &cch, &loc)) {
 			is_reset = 1;
 			goto reset;
 		} else {
 			free(buf);
 		}
-		lx->tgt->pos = prev_pos; lx->tgt->cch = prev_cch;
-		*nloc = prev_loc;
+
+		//If the macro was not expanded, restore to before the identifier was read
+		pos = prev_pos; cch = prev_cch; loc = prev_loc;
 	}
-	*/
 
 	//Update external values if applicable and return the next character
 	if (len != NULL) *len = pos - lx->tgt->pos;
@@ -316,6 +314,8 @@ reset:	pos = lx->tgt->pos;
 
 //Returns the current character
 char lex_cur(lexer *lx) {
+	//Ensure the preprocessor gets to run on the first character of a file
+	if (lx->tgt->loc.col == 0) lex_advc(lx);
 	return lx->tgt->cch;
 }
 
@@ -900,12 +900,18 @@ int lex_wspace(lexer *lx) {
 	return nline;
 }
 
-//Sets the lexer to expand a macro
-//Returns zero if a macro was identified and expanded
-int lex_expand_macro(lexer *lx, char *ident, s_pos *loc) {
+/* 
+ * Attempts to expand a macro with name ident at location m_loc
+ * Returns zero if a macro was identified and expanded
+ * If successful, cpos, cch, and cloc will be updated with the next lexer state
+ * If expansion fails, they wil be left unmodified
+ */
+int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cch, s_pos *cloc) {
 	lex_target *tgt = lx->tgt;
 	symbol *s = symtable_search(&lx->stb, ident);
-	lx->m_exp = 0; //Temporarily disable macro expansion
+	char *pos = *cpos;
+	char cur = *cch;
+	s_pos loc = *cloc;
 
 	//Check to see if there is an applicable macro for the given name
 	int expanded = 0;
@@ -941,7 +947,6 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *loc) {
 		}
 	}
 	if (m_exp == NULL || expanded) {
-		lx->m_exp = 1;
 		return -1;
 	}
 	
@@ -949,18 +954,17 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *loc) {
 	vector macro_params;
 pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	int m_error = 0;
-	char *prev_pos = lx->tgt->pos;
-	char prev_cch = lx->tgt->cch;
-	s_pos prev_loc = lx->tgt->loc;
-	lex_wspace(lx);
+	char *prev_pos = pos;
+	char prev_cch = cur;
+	s_pos prev_loc = loc;
+	while (isspace(cur)) cur = lex_prcc(lx, &pos, &cur, &loc);
 	if (lex_cur(lx) == '(') {
 		//Read macro arguments
 		int paren_c = 0;
-		char cur = lex_advc(lx);
+		cur = lex_prcc(lx, &pos, &cur, &loc);
 		while ((cur = lex_cur(lx)) != ')') {
 			//Skip whitespace
-			lex_wspace(lx);
-			cur = lex_cur(lx);
+			while (isspace(cur)) cur = lex_prcc(lx, &pos, &cur, &loc);
 
 			//Read a single argument
 			int len = 0;
@@ -986,13 +990,14 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 
 				//Copy character to buffer
 				buf[len++] = cur;
-				cur = lex_advc(lx);
+				lex_prcc(lx, &pos, &cur, &loc);
 			}
 			buf[len] = '\0';
 			vector_add(&macro_params, buf);
 
 			//Post-read checks
-			if (cur == ',') cur = lex_advc(lx);
+			if (cur == ',')
+				lex_prcc(lx, &pos, &cur, &loc);
 			if (cur == '\0') {
 				m_error = -1;
 				c_error(&lx->tgt->loc,
@@ -1000,19 +1005,19 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 				break;
 			}
 		}
-		lex_advc(lx);
+		lex_prcc(lx, &pos, &cur, &loc);
 	} else {
 		//Rewind and restore whitespace if no argument list was found
-		lx->tgt->pos = prev_pos;
-		lx->tgt->cch = prev_cch;
-		lx->tgt->loc = prev_loc;
+		pos = prev_pos;
+		cur = prev_cch;
+		loc = prev_loc;
 	}
 	
 	//Ensure the number of arguments matches the amount specified in the macro definition
 	if (macro_params.len != s->type->param.len) {
 		m_error = -1;
 		if (!lx->m_cexpr) { //Not an error in preprocessor constant expressions
-			c_error(loc, "Incorrect number of arguments to function-like macro '%s' "
+			c_error(m_loc, "Incorrect number of arguments to function-like macro '%s' "
 				"(expected %i, read %i)\n",
 				ident, s->type->param.len, macro_params.len);
 		}
@@ -1020,8 +1025,20 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 
 	//If no issues have been encountered, expand the macro
 	if (!m_error) {
+		//Commit to the state of the current context
+		lx->tgt->pos = pos;
+		lx->tgt->cch = cur;
+		lx->tgt->loc = loc;
+
+		//Open a context for the macro
 		lexer_tgt_open(lx, m_name, TGT_MACRO, m_exp);
 		tgt = lx->tgt;
+		tgt->loc = *m_loc;
+
+		//Update external values
+		*cpos = tgt->pos;
+		*cch = tgt->cch;
+		*cloc = tgt->loc;
 
 		//Set definitions for each parameter
 		for (int i=0; i<macro_params.len; i++)
@@ -1035,7 +1052,6 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	//Free the macro name and parameters
 	vector_close(&macro_params);
 	free(ident);
-	lx->m_exp = 1;
 	return m_error;
 }
 
