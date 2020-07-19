@@ -137,43 +137,24 @@ void lexer_del_cond(lexer *lx) {
 	return;
 }
 
-//Returns the current character
-char lex_cur(lexer *lx) {
-	return lx->tgt->cch;
-}
-
-//Returns the next character
-//If not NULL, the integer pointed to by len will be set to the number of characters processed
-//If not NULL, the struct pointed to by nloc will be set to the resultant source location
-//If pflag != 0, the reset flag will be held for context switches during lookahead
-char lex_nchar(lexer *lx, int *len, s_pos *nloc, int pflag) {
-	s_pos loc;
+//Lowest-level lexing function: returns the next state after performing single-character preprocessing
+//cpos, cch, and cloc are pointers to a state, and are modified to represent the suceeding state
+char lex_prcc(lexer *lx, char **cpos, char *cch, s_pos *cloc) {
 	char *pos;
 	char nchar;
+	s_pos loc;
 	static int is_reset = 0;
+	if (cpos == NULL || cch == NULL || cloc == NULL) return '\0';
 
 	/*
 	 * Move to the next character
 	 */
-	char *prev_pos = lx->tgt->pos;
-	char prev_cch = lx->tgt->cch;
-reset:	pos = (is_reset || prev_cch == '\0') ? lx->tgt->pos : lx->tgt->pos+1;
+reset:	pos = *(cpos)+1;
 	nchar = *pos;
-	loc = lx->tgt->loc;
-
-	//Release the current context if the end has been reached
-tpaste:	if (nchar == '\0' && lx->m_exp) {
-		//The last context will stay open until the lexer is closed
-		if (lx->tgt->prev == NULL)
-			return '\0';
-
-		lexer_tgt_close(lx);
-		is_reset = 1;
-		goto reset;
-	}
+	loc = *cloc;
 
 	//Update location
-	if (*lx->tgt->pos == '\n') {
+	if (*cch == '\n') {
 		loc.col = (is_reset) ? 1 : 0;
 		loc.line++;
 	}
@@ -217,11 +198,74 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 	}
 
 	/*
+	 * Handle token pasting
+	//Only attempt once per chunk of whitespace
+	char *cur = pos;
+	char prev = (is_reset) ? '\0' : *lx->tgt->pos;
+	if (isspace(*cur) && !isspace(prev))
+		while (isspace(*cur) && *cur != '\n') cur++;
+
+	//Perform token pasting if a double pound sign exists
+	int has_dns = 0;
+	if (lx->tgt->type == TGT_MACRO && *cur == '#') {
+		//Check for a '##'
+		if (*(cur++) == '#') {
+			has_dns = 1;
+			while (isspace(*(++cur)) && *cur != '\n');
+		}
+	}
+	if (has_dns) {
+		loc.col += cur - pos;
+		pos = cur;
+		nchar = *pos;
+		is_reset = 1;
+		goto tpaste;
+	}	
+	*/
+
+	*cpos = pos;
+	*cch = nchar;
+	*cloc = loc;
+	return nchar;
+}
+
+//Handles preprocessing and gets the next character
+//If not NULL, the integer pointed to by len will be set to the number of characters processed
+//If not NULL, the struct pointed to by nloc will be set to the resultant source location
+//If pflag != 0, the reset flag will be held for context switches during lookahead
+char lex_nchar(lexer *lx, int *len, s_pos *nloc, int pflag) {
+	char *pos, *prev_pos;
+	char cch, prev_cch;
+	s_pos loc;
+	
+	/*
+	 * Get the next character
+	 */
+	//char *prev_pos = pos;
+	//char prev_cch = cch;
+	static int is_reset = 0;
+reset:	pos = lx->tgt->pos;
+	cch = lx->tgt->cch;
+	loc = lx->tgt->loc;
+	if (!is_reset)
+		lex_prcc(lx, &pos, &cch, &loc);
+
+	//Release the current context if the end has been reached
+	if (cch == '\0' && lx->m_exp) {
+		//The last context will stay open until the lexer is closed
+		if (lx->tgt->prev == NULL)
+			return '\0';
+
+		lexer_tgt_close(lx);
+		is_reset = 1;
+		goto reset;
+	}
+	
+	/*
 	 * Macro expansion
 	 * Only attempt if currently at beginning of an identifier and expansion is enabled
-	 */
 	char prev = (is_reset) ? '\0' : *lx->tgt->pos;
-	if (lx->m_exp && (!isalpha(prev) && prev != '_') && (isalpha(nchar) || nchar == '_')) {
+	if (lx->m_exp && (!isalpha(prev) && prev != '_') && (isalpha(cch) || cch == '_')) {
 		//Read identifier
 		int len = 0;
 		int bsize = 256;
@@ -243,7 +287,7 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 
 		//Attempt to expand the macro
 		prev_pos = lx->tgt->pos; prev_cch = lx->tgt->cch;
-		s_pos prev_loc = loc;
+		s_pos prev_loc = *nloc;
 		lx->tgt->pos = cur; lx->tgt->cch = *cur;
 		if (!lex_expand_macro(lx, buf, &m_loc)) {
 			is_reset = 1;
@@ -252,33 +296,9 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 			free(buf);
 		}
 		lx->tgt->pos = prev_pos; lx->tgt->cch = prev_cch;
-		loc = prev_loc;
+		*nloc = prev_loc;
 	}
-
-	/*
-	 * Handle token pasting
-	 */
-	//Only attempt once per chunk of whitespace
-	char *cur = pos;
-	if (isspace(*cur) && !isspace(prev))
-		while (isspace(*cur) && *cur != '\n') cur++;
-
-	//Perform token pasting if a double pound sign exists
-	int has_dns = 0;
-	if (lx->tgt->type == TGT_MACRO && *cur == '#') {
-		//Check for a '##'
-		if (*(cur++) == '#') {
-			has_dns = 1;
-			while (isspace(*(++cur)) && *cur != '\n');
-		}
-	}
-	if (has_dns) {
-		loc.col += cur - pos;
-		pos = cur;
-		nchar = *pos;
-		is_reset = 1;
-		goto tpaste;
-	}	
+	*/
 
 	//Update external values if applicable and return the next character
 	if (len != NULL) *len = pos - lx->tgt->pos;
@@ -290,7 +310,13 @@ tpaste:	if (nchar == '\0' && lx->m_exp) {
 	}
 	if (!pflag)
 		is_reset = 0;
-	return nchar;
+
+	return cch;
+}
+
+//Returns the current character
+char lex_cur(lexer *lx) {
+	return lx->tgt->cch;
 }
 
 //Looks ahead by one character but does not advance the lexer
@@ -720,33 +746,6 @@ reset:	nline |= lex_wspace(lx);
 			if (lex_peekc(lx) == '=') {
 				t.type = TOK_ASSIGN_DIV;
 				lex_advc(lx);
-			} else if (lex_peekc(lx) == '/') {
-				//C++ style comments
-				lex_advc(lx); lex_advc(lx);
-				for (;;) {
-					if (lex_cur(lx) == '\n') {
-						//tgt->pos = cur;
-						goto reset;
-					} else if (lex_cur(lx) == '\0') {
-						t.type = TOK_END;
-						goto end;
-					}
-					lex_advc(lx);
-				}
-			} else if (lex_peekc(lx) == '*') {
-				//C style comments
-				lex_advc(lx); lex_advc(lx);
-				for (;;) {
-					if (lex_cur(lx) == '*' && lex_peekc(lx) == '/') {
-						lex_advc(lx); lex_advc(lx);
-						goto reset;
-					} else if (lex_cur(lx) == '\0') {
-						c_error(&loc, "Unterminated comment\n");
-						t.type = TOK_END;
-						goto end;
-					}
-					lex_advc(lx);
-				}
 			}
 			break;
 		case '%':

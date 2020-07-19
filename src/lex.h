@@ -82,8 +82,9 @@ void lexer_add_cond(struct LEXER *lx, int pass);
 void lexer_del_cond(struct LEXER *lx);
 
 //Used internally to process individual characters
-char lex_cur(struct LEXER *lx);
+char lex_prcc(struct LEXER *lx, char **cpos, char *cch, struct SRC_POS *cloc);
 char lex_nchar(struct LEXER *lx, int *len, struct SRC_POS *loc, int pflag);
+char lex_cur(struct LEXER *lx);
 char lex_peekc(struct LEXER *lx);
 char lex_advc(struct LEXER *lx);
 
