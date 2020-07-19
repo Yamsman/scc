@@ -92,8 +92,8 @@ void map_insert(map *m, const char *key, void *val) {
 	//Hash the key and perform linear probing if necessary
 	int index = str_hash(key) % m->max;
 	while (m->keys[index] != NULL) {
-		if (m->table[index] != NULL)
-			index = (index + 1) % m->max;
+		if (m->table[index] == NULL) break;
+		index = (index + 1) % m->max;
 	}
 
 	//Insert the value and key
