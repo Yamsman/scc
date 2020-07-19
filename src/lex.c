@@ -147,6 +147,7 @@ char lex_prcc(lexer *lx, char **cpos, char *cch, s_pos *cloc) {
 
 	/*
 	 * Move to the next character
+	 * If the current column is 0, the lexer is at the beginning of a file context
 	 */
 	int is_reset = (cloc->col == 0);
 reset:	pos = (is_reset) ? *cpos : *(cpos)+1;
@@ -197,32 +198,6 @@ reset:	pos = (is_reset) ? *cpos : *(cpos)+1;
 		}
 	}
 
-	/*
-	 * Handle token pasting
-	//Only attempt once per chunk of whitespace
-	char *cur = pos;
-	char prev = (is_reset) ? '\0' : *lx->tgt->pos;
-	if (isspace(*cur) && !isspace(prev))
-		while (isspace(*cur) && *cur != '\n') cur++;
-
-	//Perform token pasting if a double pound sign exists
-	int has_dns = 0;
-	if (lx->tgt->type == TGT_MACRO && *cur == '#') {
-		//Check for a '##'
-		if (*(cur++) == '#') {
-			has_dns = 1;
-			while (isspace(*(++cur)) && *cur != '\n');
-		}
-	}
-	if (has_dns) {
-		loc.col += cur - pos;
-		pos = cur;
-		nchar = *pos;
-		is_reset = 1;
-		goto tpaste;
-	}	
-	*/
-
 	*cpos = pos;
 	*cch = nchar;
 	*cloc = loc;
@@ -246,7 +221,7 @@ char lex_nchar(lexer *lx, int *len, s_pos *nloc, int pflag) {
 reset:	pos = lx->tgt->pos;
 	cch = lx->tgt->cch;
 	loc = lx->tgt->loc;
-	if (!is_reset) lex_prcc(lx, &pos, &cch, &loc);
+tpaste:	if (!is_reset) lex_prcc(lx, &pos, &cch, &loc);
 	if (is_start) lx->tgt->loc = loc;
 
 	//Release the current context if the end has been reached
@@ -295,6 +270,32 @@ reset:	pos = lx->tgt->pos;
 		}
 
 		//If the macro was not expanded, restore to before the identifier was read
+		pos = prev_pos; cch = prev_cch; loc = prev_loc;
+	}
+
+	/*
+	 * Handle token pasting
+	 */
+	//Only attempt once per chunk of whitespace
+	prev_pos = pos; prev_cch = cch; prev_loc = loc;
+	if (isspace(cch) && !isspace(prev))
+		while (isspace(cch) && cch != '\n') lex_prcc(lx, &pos, &cch, &loc);
+
+	//Perform token pasting if a double pound sign exists
+	int has_dns = 0;
+	if (lx->tgt->type == TGT_MACRO && cch == '#') {
+		//Check for a '##'
+		lex_prcc(lx, &pos, &cch, &loc);
+		if (cch == '#') {
+			has_dns = 1;
+			do lex_prcc(lx, &pos, &cch, &loc);
+			while (isspace(cch) && cch != '\n');
+		}
+	}
+	if (has_dns) {
+		is_reset = 1;
+		goto tpaste;
+	} else {
 		pos = prev_pos; cch = prev_cch; loc = prev_loc;
 	}
 
@@ -915,6 +916,7 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cc
 
 	//Check to see if there is an applicable macro for the given name
 	int expanded = 0;
+	int m_param = 0;
 	char *m_name = (s != NULL) ? s->name : NULL;
 	char *m_exp = (s != NULL) ? s->mac_exp : NULL;
 	for (lex_target *i = tgt; i != NULL; i = i->prev) {
@@ -934,6 +936,7 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cc
 				//If a match is found, s becomes the "parent" macro
 				if (!strcmp(ident, p->name)) {
 					s = m;
+					m_param = 1;
 					m_name = p->name;
 					m_exp = i->mp_exp.table[j];
 					goto pfound;
@@ -958,11 +961,11 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	char prev_cch = cur;
 	s_pos prev_loc = loc;
 	while (isspace(cur)) cur = lex_prcc(lx, &pos, &cur, &loc);
-	if (lex_cur(lx) == '(') {
+	if (cur == '(') {
 		//Read macro arguments
 		int paren_c = 0;
 		cur = lex_prcc(lx, &pos, &cur, &loc);
-		while ((cur = lex_cur(lx)) != ')') {
+		while (cur != ')') {
 			//Skip whitespace
 			while (isspace(cur)) cur = lex_prcc(lx, &pos, &cur, &loc);
 
@@ -1014,7 +1017,7 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	}
 	
 	//Ensure the number of arguments matches the amount specified in the macro definition
-	if (macro_params.len != s->type->param.len) {
+	if (!m_param && macro_params.len != s->type->param.len) {
 		m_error = -1;
 		if (!lx->m_cexpr) { //Not an error in preprocessor constant expressions
 			c_error(m_loc, "Incorrect number of arguments to function-like macro '%s' "
