@@ -128,7 +128,7 @@ int eval_constexpr(lexer *lx, vector *input, int *err) {
 			}
 
 			//Search the symbol table to check if the identifier is defined
-			long long res = (symtable_search(&lx->stb, t->dat.sval) != NULL);
+			long long res = (symtable_search(lx->stb, t->dat.sval) != NULL);
 			vector_push(&vals, (void*)res);
 		} else if (t->type == TOK_IDENT) {
 			vector_add(&vals, (void*)0);

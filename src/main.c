@@ -52,6 +52,11 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
+	//Open symbol table
+	symtable stb;
+	symtable_init(&stb);	
+	symtable_predef(&stb);
+
 	//Compile each file
 	init_kwtable();
 	for (int i=optind; i<argc; i++) {
@@ -63,7 +68,7 @@ int main(int argc, char **argv) {
 		/*
 		 * Initialize lexer
 		 */
-		lexer *lx = lexer_init(fname);
+		lexer *lx = lexer_init(&stb, fname);
 		if (!lx) continue;
 
 		//Stop early and print information for eflag/lflag
@@ -104,6 +109,7 @@ lclean:		lexer_close(lx);
 	if (c_errflag)
 		puts("Compilation terminated.");
 	close_kwtable();
+	symtable_close(&stb);
 
 	return 0;
 }

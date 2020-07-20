@@ -102,7 +102,7 @@ void ppd_define(lexer *lx) {
 	}
 
 	//Add to symtable
-	symbol *sym = symtable_def(&lx->stb, mname.dat.sval, mtype, &mname.loc);
+	symbol *sym = symtable_def(lx->stb, mname.dat.sval, mtype, &mname.loc);
 	sym->mac_exp = buf;
 	return;
 }
@@ -205,10 +205,10 @@ void ppd_undef(lexer *lx) {
 		c_error(&lx->tgt->loc, "Invalid macro name '%s'\n", mname.dat.sval);
 
 	//Check the global scope
-	symbol *s = map_get(&lx->stb.s_global->table, mname.dat.sval);
+	symbol *s = map_get(&lx->stb->s_global->table, mname.dat.sval);
 	if (s == NULL || s->type->kind != TYPE_MACRO)
 		return;
-	map_remove(&lx->stb.s_global->table, mname.dat.sval);
+	map_remove(&lx->stb->s_global->table, mname.dat.sval);
 
 	return;
 }
@@ -272,7 +272,7 @@ void ppd_ifdef(lexer *lx) {
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifdef\n");
 
-	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 1 : 0;
+	int res = (symtable_search(lx->stb, t.dat.sval) != NULL) ? 1 : 0;
 	lexer_add_cond(lx, res);
 	return;
 }
@@ -283,7 +283,7 @@ void ppd_ifndef(lexer *lx) {
 	if (t.type != TOK_IDENT)
 		c_error(&t.loc, "Expected identifier after #ifndef\n");
 
-	int res = (symtable_search(&lx->stb, t.dat.sval) != NULL) ? 0 : 1;
+	int res = (symtable_search(lx->stb, t.dat.sval) != NULL) ? 0 : 1;
 	lexer_add_cond(lx, res);
 	return;
 }

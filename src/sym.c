@@ -32,10 +32,14 @@ void symtable_predef(symtable *stb) {
 	struct tm *l_time = localtime(&c_time);
 	strftime(sdate, 16, "\"%b %d %Y\"", l_time);
 	strftime(stime, 16, "\"%H:%M:%S\"", l_time);
+
+	//Static buffer for __FILE__ and __LINE__ (filled in lex_expand_macro)
+	static char sfili[256];
 	
 	//Predefine macros
-	//__FILE__ and __LINE__ macros are implemented in lex_expand_macro
 	PREDEF_MACRO(stb, __DATE__, sdate);
+	PREDEF_MACRO(stb, __FILE__, sfili);
+	PREDEF_MACRO(stb, __LINE__, sfili);
 	PREDEF_MACRO(stb, __STDC__, "1");
 	PREDEF_MACRO(stb, __STDC_HOSTED__, "0");
 	PREDEF_MACRO(stb, __STDC_VERSION__, "199901L");

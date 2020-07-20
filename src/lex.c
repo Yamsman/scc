@@ -28,13 +28,14 @@ void close_kwtable() {
 }
 
 token BLANK_TOKEN = {-1, -1, 0, 0, 0};
-lexer *lexer_init(char *fname) {
+lexer *lexer_init(symtable *stb, char *fname) {
 	lexer *lx = malloc(sizeof(struct LEXER));
 	lx->tgt = NULL;
 	lx->pre = NULL;
 	lx->ahead = BLANK_TOKEN;
 	vector_init(&lx->flist, VECTOR_EMPTY);
 	vector_init(&lx->conds, VECTOR_EMPTY);
+	lx->stb = stb;
 
 	if (!lex_open_file(lx, fname)) {
 		c_error(NULL, "Unable to open file '%s': ", fname);
@@ -43,7 +44,6 @@ lexer *lexer_init(char *fname) {
 		free(lx);
 		return NULL;
 	}
-	symtable_init(&lx->stb);
 	lx->m_exp = 1;
 	lx->m_cexpr = 0;
 
@@ -81,7 +81,6 @@ void lexer_close(lexer *lx) {
 
 	vector_close(&lx->flist);
 	vector_close(&lx->conds);
-	symtable_close(&lx->stb);
 	free(lx);
 	return;
 }
@@ -285,7 +284,7 @@ tpaste:	if (!is_reset) lex_prcc(lx, &pos, &cch, &loc);
 		int bsize = 256;
 		char cur = cch;
 		char *buf = malloc(bsize);
-		s_pos m_loc = lx->tgt->loc;
+		s_pos m_loc = loc;
 		while (isalnum(cur) || cur == '_') {
 			//Resize if needed
 			if (len+2 == bsize) {
@@ -959,22 +958,10 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cc
 	s_pos loc = *cloc;
 	char *m_name, *m_exp;
 
-	//Check for predefined macros __FILE__ and __LINE__
-	static char pdef_buf[256];
-	if (!strcmp(ident, "__FILE__")) {
-		snprintf(pdef_buf, 256, "\"%s\"", lx->tgt->name);
-		m_name = "__FILE__"; m_exp = pdef_buf;
-		goto pfound;
-	} else if (!strcmp(ident, "__LINE__")) {
-		snprintf(pdef_buf, 256, "%i", m_loc->line);
-		m_name = "__LINE__"; m_exp = pdef_buf;
-		goto pfound;
-	}
-
 	//Check to see if there is an applicable macro for the given name
 	int expanded = 0;
 	int m_param = 0;
-	symbol *s = symtable_search(&lx->stb, ident);
+	symbol *s = symtable_search(lx->stb, ident);
 	m_name = (s != NULL) ? s->name : NULL;
 	m_exp = (s != NULL) ? s->mac_exp : NULL;
 	for (lex_target *i = tgt; i != NULL; i = i->prev) {
@@ -983,7 +970,7 @@ int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cc
 
 		//If the macro was found in the symbol table, check if it is a macro parameter
 		if (m_exp == NULL) {
-			symbol *m = symtable_search(&lx->stb, i->name);
+			symbol *m = symtable_search(lx->stb, i->name);
 			if (m == NULL) continue;
 
 			//Check the macro's parameters
@@ -1019,7 +1006,7 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	char prev_cch = cur;
 	s_pos prev_loc = loc;
 	while (isspace(cur)) cur = lex_prcc(lx, &pos, &cur, &loc);
-	if (cur == '(') {
+	if (cur == '(' && s->is_fmacro) {
 		//Read macro arguments
 		int paren_c = 0;
 		cur = lex_prcc(lx, &pos, &cur, &loc);
@@ -1061,7 +1048,7 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 				lex_prcc(lx, &pos, &cur, &loc);
 			if (cur == '\0') {
 				m_error = -1;
-				c_error(&lx->tgt->loc,
+				c_error(&loc,
 					"Unexpected end of input in macro parameter list\n");
 				break;
 			}
@@ -1073,6 +1060,12 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 		cur = prev_cch;
 		loc = prev_loc;
 	}
+
+	//Fill expansion buffer for predefined __FILE__ or __LINE__ macros
+	if (!strcmp(ident, "__FILE__"))
+		snprintf(s->mac_exp, 256, "\"%s\"", lx->tgt->name);
+	else if (!strcmp(ident, "__LINE__"))
+		snprintf(s->mac_exp, 256, "%i", m_loc->line);
 	
 	//Ensure the number of arguments matches the amount specified in the macro definition
 	if (!m_param && macro_params.len != s->type->param.len) {
@@ -1085,7 +1078,7 @@ pfound:	vector_init(&macro_params, VECTOR_EMPTY);
 	}
 
 	//If no issues have been encountered, expand the macro
-	if (!m_error) {
+predef:	if (!m_error) {
 		//Commit to the state of the current context
 		lx->tgt->pos = pos;
 		lx->tgt->cch = cur;
@@ -1238,7 +1231,7 @@ int is_type_spec(lexer *lx, token t) {
 		case TOK_KW_ENUM:
 			return 1;
 		case TOK_IDENT:
-			td = symtable_search(&lx->stb, t.dat.sval);
+			td = symtable_search(lx->stb, t.dat.sval);
 			return (td->btype->s_class == CLASS_TYPEDEF);
 	}
 	return 0;

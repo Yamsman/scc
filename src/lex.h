@@ -62,7 +62,7 @@ typedef struct LEXER {
 	struct TOKEN ahead;		//Current token
 	struct VECTOR flist;		//List of processed files
 	struct VECTOR conds;		//Preprocessor conditions
-	struct SYMTABLE stb;		//Symbol table
+	struct SYMTABLE *stb;		//Symbol table
 	int m_exp;			//Flag for enabling/disabling macro expansion
 	int m_cexpr;			//Flag for ignoring parameter-less macro errors
 } lexer;
@@ -73,7 +73,7 @@ void init_kwtable();
 void close_kwtable();
 
 //Lexer top-level context control functions
-struct LEXER *lexer_init(char *fname);
+struct LEXER *lexer_init(struct SYMTABLE *stb, char *fname);
 int lex_open_file(struct LEXER *lx, char *fname);
 void lexer_close(struct LEXER *lx);
 void lexer_tgt_open(struct LEXER *lx, char *name, int type, char *buf);

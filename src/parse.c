@@ -214,7 +214,7 @@ s_type *parse_decl_spec(lexer *lx) {
 
 		//Check for a user defined type
 		if (t.type == TOK_IDENT) {
-			symbol *td = symtable_search(&lx->stb, t.dat.sval);
+			symbol *td = symtable_search(lx->stb, t.dat.sval);
 			if (type->kind != TYPE_UNDEF) goto ts_end;
 			if (td == NULL || td->btype->s_class != CLASS_TYPEDEF) goto ts_end;
 
@@ -446,7 +446,7 @@ ast_n *parse_decl_body(lexer *lx, s_type *base_type) {
 	if (vname.dat.sval == NULL)
 		c_error(&vname.loc, "Missing variable name in declaration\n");
 
-	symbol *s = symtable_def(&lx->stb, vname.dat.sval, vtype, &vname.loc);
+	symbol *s = symtable_def(lx->stb, vname.dat.sval, vtype, &vname.loc);
 	if (!s) { //If duplicate exists
 		free(vname.dat.sval);
 		type_del(vtype);
@@ -569,16 +569,16 @@ ast_n *parse_fdef(lexer *lx) {
 	f_type->ret = r_type;
 
 	//Create symbol (or reuse unless there is a redefinition conflict)
-	symbol *s = symtable_def(&lx->stb, f_name.dat.sval, f_type, &f_name.loc);
+	symbol *s = symtable_def(lx->stb, f_name.dat.sval, f_type, &f_name.loc);
 	if (s->fbody != NULL)
 		c_error(&f_name.loc, "Redefinition of '%s'\n", f_name.dat.sval);
 
 	//Enter function scope
-	symtable_scope_enter(&lx->stb);
-	lx->stb.func = s;
+	symtable_scope_enter(lx->stb);
+	lx->stb->func = s;
 	for (int i=0; i<f_type->param.len; i++) {
 		s_param *p = f_type->param.table[i];
-		symtable_def(&lx->stb, p->name, p->type, NULL);
+		symtable_def(lx->stb, p->name, p->type, NULL);
 	}
 
 	//Create node and parse body
@@ -587,8 +587,8 @@ ast_n *parse_fdef(lexer *lx) {
 	node->dat.decl.block = parse_stmt_cmpd(lx);
 
 	//Leave function scope
-	symtable_scope_leave(&lx->stb);
-	lx->stb.func = NULL;
+	symtable_scope_leave(lx->stb);
+	lx->stb->func = NULL;
 
 	return node;
 }
@@ -683,7 +683,7 @@ s_type *parse_sdef(lexer *lx) {
 		symbol *s = NULL;
 		if (type->param.len == VECTOR_EMPTY) {
 			//Search the symbol table for an existing definition
-			s = symtable_search(&lx->stb, tname);
+			s = symtable_search(lx->stb, tname);
 			type_del(type);
 			if (s == NULL) {
 				c_error(&nloc, "Undefined struct '%s'\n", tname);
@@ -693,7 +693,7 @@ s_type *parse_sdef(lexer *lx) {
 			free(tname);
 			type = type_clone(s->type);
 		} else {
-			s = symtable_def(&lx->stb, tname, type_clone(type), &nloc);
+			s = symtable_def(lx->stb, tname, type_clone(type), &nloc);
 		}
 	}
 
@@ -719,7 +719,7 @@ void parse_enum(lexer *lx, int *val) {
 	//Define a macro for the enumeration
 	char buf[64];
 	snprintf(buf, 64, "%i", *val);
-	symbol *sym = symtable_def(&lx->stb, t.dat.sval, type_new(TYPE_MACRO), &t.loc);
+	symbol *sym = symtable_def(lx->stb, t.dat.sval, type_new(TYPE_MACRO), &t.loc);
 
 	//Copy the expansion to a new string
 	char *exp = malloc(strlen(buf)+1);
@@ -1267,7 +1267,7 @@ ast_n *parse_expr_primary(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT: //TODO: improve handling of undefined variables
 			lex_adv(lx);
-			symbol *s = symtable_search(&lx->stb, t.dat.sval);
+			symbol *s = symtable_search(lx->stb, t.dat.sval);
 			node = astn_new(EXPR, EXPR_IDENT, t);
 			if (s != NULL) {
 				node->dat.expr.sym = s;
@@ -1564,7 +1564,7 @@ ast_n *parse_stmt_label(lexer *lx) {
 	switch (t.type) {
 		case TOK_IDENT:
 			node = astn_new(STMT, STMT_LABEL, t);
-			symtable_def_label(&lx->stb, t.dat.sval, &t.loc);
+			symtable_def_label(lx->stb, t.dat.sval, &t.loc);
 			node->dat.stmt.lbl = t.dat.sval;
 			lex_adv(lx);
 			break;
