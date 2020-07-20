@@ -720,6 +720,8 @@ reset:	nline |= lex_wspace(lx);
 			if (val == '\\') {
 				lex_advc(lx);
 				val = lex_eschar(lx);
+			} else {
+				lex_advc(lx);
 			}
 
 			//Check for closing '
@@ -728,6 +730,12 @@ reset:	nline |= lex_wspace(lx);
 			} else {
 				c_error(&loc, "Multiple characters in character literal\n");
 			}
+
+			//Make integer type
+			s_type *ty = type_new(TYPE_INT);
+			ty->size = SIZE_CHAR;
+			ty->is_signed = 1;
+			t.dtype = ty;
 
 			t.dat.ival = val;
 			t.type = TOK_CONST;
@@ -897,7 +905,6 @@ reset:	nline |= lex_wspace(lx);
 		case '5': case '6': case '7': case '8': case '9':
 			//Read number
 num_case:		lex_num(lx, &t);
-			//free(t.dtype); //temporary
 			t.type = TOK_CONST;
 			noadvc = 1;
 			break;
@@ -1246,7 +1253,7 @@ const char *tok_str(token t, int nflag) {
 
 	//Check for special cases
 	static char buf[256];
-	switch (t.type) {
+	switch (t.type * (nflag)) {
 		case TOK_CONST:
 			if (t.dtype->kind == TYPE_FLOAT)
 				snprintf(buf, 256, "%lf", t.dat.fval);
@@ -1263,7 +1270,37 @@ const char *tok_str(token t, int nflag) {
 	return tstr_list[t.type*2 + (nflag != 0)];
 }
 
-void lexer_debug() {
-	/*
-	*/
+void lexer_debug(lexer *lx, int dbg_lvl) {
+	//Get all tokens
+	int tcount = 0;
+	token t = lex_peek(lx);
+	while (t.type != TOK_END) {
+		s_pos loc = t.loc;
+		if (t.nline) {
+			if (tcount != 0)
+				printf("\n");
+			if (dbg_lvl > 0)
+				printf("%i:\t", lx->tgt->loc.line);
+		}
+		printf("%s ", tok_str(t, dbg_lvl));
+		tcount++;
+		lex_adv(lx);
+		t = lex_peek(lx);
+	}
+	printf("\n");
+	if (dbg_lvl > 0)
+	printf("# tokens: %i\n", tcount);
+	return;
+}
+
+void lexer_debug_pprc(lexer *lx, int dbg_lvl) {
+	char c = lex_cur(lx);
+	while (c != '\0') {
+		if (dbg_lvl > 0)
+			printf("(%i:%i)\t%c\n", lx->tgt->loc.line, lx->tgt->loc.col, c);
+		else
+			printf("%c", c);
+		c = lex_advc(lx);
+	}
+	return;
 }

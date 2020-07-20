@@ -10,16 +10,14 @@
 #include "inst.h"
 #include "gen.h"
 
-#include <ctype.h>
-
 void usage(int detail) {
 	printf("USAGE: scc [OPTION]... [FILE]...\n");
 	if (!detail) return;
 	printf("\nOptions:\n");
 	printf(" -h\t\tprint this help message\n");
 	printf(" -o [outfile]\tspecifies the name of the output file\n");
-	printf(" -d\t\tprint debug information for each phase\n");
-	printf(" -l\t\tonly perform lexical analysis phase\n");
+	printf(" -e\t\tstop after preprocessing phase (-E for detailed output)\n"); 
+	printf(" -l\t\tstop after lexical analysis phase (-L for detailed output)\n");
 	printf(" -p\t\tstop after parsing phase\n\n");
 	return;
 }
@@ -30,15 +28,19 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	//Parse options
-	int opt, hflag = 0, dflag = 0, lflag = 0, pflag = 0;
+	/*
+	 * Handle option parsing
+	 */
+	int opt, hflag = 0, eflag = 0, lflag = 0, pflag = 0;
 	char *ofname = "out.s";
-	while ((opt = getopt(argc, argv, "ho:dlp")) != -1) {
+	while ((opt = getopt(argc, argv, "ho:eElLp")) != -1) {
 		switch (opt) {
 			case 'h': hflag = 1;		break;
 			case 'o': ofname = optarg;	break;
-			case 'd': dflag = 1;		break;
+			case 'e': eflag = 1;		break;
+			case 'E': eflag = 2;		break;
 			case 'l': lflag = 1;		break;
+			case 'L': lflag = 2;		break;
 			case 'p': pflag = 1;		break;
 			default:
 				c_error(NULL, "Unknown option '%c'\n", opt);
@@ -58,26 +60,24 @@ int main(int argc, char **argv) {
 		strncpy(fname, argv[i], strlen(argv[i]));
 		fname[strlen(argv[i])] = '\0';
 
-		//Initialize lexer
+		/*
+		 * Initialize lexer
+		 */
 		lexer *lx = lexer_init(fname);
 		if (!lx) continue;
 
-		//If lflag option was set, print all tokens
-		int tcount = 0;
-		token t = lex_peek(lx);
-		while (t.type != TOK_END) {
-			tcount++;
-			s_pos loc = t.loc;
-			if (t.nline) printf("\n");
-			printf("%s ", tok_str(t, 1));
-			lex_adv(lx);
-			t = lex_peek(lx);
+		//Stop early and print information for eflag/lflag
+		if (eflag) {
+			lexer_debug_pprc(lx, eflag-1);
+			goto lclean;
+		} else if (lflag) {
+			lexer_debug(lx, lflag-1);
+			goto lclean;
 		}
-		printf("\n");
-		printf("tcount: %i\n", tcount);
-		
+
 		/*
-		//Parse the input
+		 * Perform parsing
+		 */
 		ast_n *tree = parse(lx);
 		if (c_errflag)
 			goto pclean;
@@ -95,12 +95,11 @@ int main(int argc, char **argv) {
 			inst_str(n);
 			n = n->next;
 		}
-*/
 
 		//Clean up
-aclean:		//asmf_close(&f);
-pclean:		//astn_del(tree);
-		lexer_close(lx);
+aclean:		asmf_close(&f);
+pclean:		astn_del(tree);
+lclean:		lexer_close(lx);
 	}
 	if (c_errflag)
 		puts("Compilation terminated.");
