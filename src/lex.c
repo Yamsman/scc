@@ -150,7 +150,7 @@ char lex_prcc(lexer *lx, char **cpos, char *cch, s_pos *cloc) {
 	 * If the current column is 0, the lexer is at the beginning of a file context
 	 */
 	int is_reset = (cloc->col == 0);
-reset:	pos = (is_reset) ? *cpos : *(cpos)+1;
+	pos = (is_reset) ? *cpos : *(cpos)+1;
 	nchar = *pos;
 	loc = *cloc;
 
@@ -161,7 +161,9 @@ reset:	pos = (is_reset) ? *cpos : *(cpos)+1;
 	}
 	loc.col++;
 
-	//Perform trigraph conversion/newline splicing if needed
+	/*
+	 * Perform trigraph conversion/newline splicing if needed
+	 */
 	for (;;) {
 		//Process trigraphs
 		if (*pos == '?' && *(pos+1) == '?') {
@@ -234,7 +236,43 @@ tpaste:	if (!is_reset) lex_prcc(lx, &pos, &cch, &loc);
 		is_reset = 1;
 		goto reset;
 	}
-	
+
+	/*
+	 * Replace comments with whitespace
+	 */
+	prev_pos = pos; prev_cch = cch; prev_loc = loc;
+	if (cch == '/') {
+		lex_prcc(lx, &pos, &cch, &loc);
+		if (cch == '/') {
+			//C++ style comments
+			for (;;) {
+				if (cch == '\n' || cch == '\0') break;
+				lex_prcc(lx, &pos, &cch, &loc);
+			}
+			if (cch == '\0') {
+				//error
+			}
+		} else if (cch == '*') {
+			//C style comments
+			lex_prcc(lx, &pos, &cch, &loc);
+			char prevc = cch;
+			for (;;) {
+				if (prevc == '\0') break;
+				lex_prcc(lx, &pos, &cch, &loc);
+				if (prevc == '*' && cch == '/') break;
+				prevc = cch;
+			}
+			if (cch == '\0') {
+				c_error(&loc, "Unterminated comment\n");
+			} else {
+				cch = ' ';
+			}
+		} else {
+			//Rewind
+			pos = prev_pos; cch = prev_cch; loc = prev_loc;
+		}
+	}
+
 	/*
 	 * Macro expansion
 	 * Only attempt if currently at beginning of an identifier and expansion is enabled
