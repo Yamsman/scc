@@ -69,7 +69,10 @@ typedef struct SYMBOL {
 	struct AST_N *fbody;	//Function body
 	struct VECTOR lvars;	//Function variables
 	struct MAP labels;	//Function labels
+
 	char *mac_exp;		//Macro expansion
+	int is_fmacro;		//Nonzero if macro is function-like
+	int is_predef;		//Nonzero if macro was predefined
 } symbol;
 
 typedef struct SCOPE {
@@ -85,6 +88,7 @@ typedef struct SYMTABLE {
 
 //Symtable control functions
 void symtable_init(struct SYMTABLE *stb);
+void symtable_predef(struct SYMTABLE *stb);
 void symtable_close(struct SYMTABLE *stb);
 void symtable_scope_enter(struct SYMTABLE *stb);
 void symtable_scope_leave(struct SYMTABLE *stb);

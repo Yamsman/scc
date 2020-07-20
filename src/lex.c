@@ -954,16 +954,29 @@ int lex_wspace(lexer *lx) {
  */
 int lex_expand_macro(lexer *lx, char *ident, s_pos *m_loc, char **cpos, char *cch, s_pos *cloc) {
 	lex_target *tgt = lx->tgt;
-	symbol *s = symtable_search(&lx->stb, ident);
 	char *pos = *cpos;
 	char cur = *cch;
 	s_pos loc = *cloc;
+	char *m_name, *m_exp;
+
+	//Check for predefined macros __FILE__ and __LINE__
+	static char pdef_buf[256];
+	if (!strcmp(ident, "__FILE__")) {
+		snprintf(pdef_buf, 256, "\"%s\"", lx->tgt->name);
+		m_name = "__FILE__"; m_exp = pdef_buf;
+		goto pfound;
+	} else if (!strcmp(ident, "__LINE__")) {
+		snprintf(pdef_buf, 256, "%i", m_loc->line);
+		m_name = "__LINE__"; m_exp = pdef_buf;
+		goto pfound;
+	}
 
 	//Check to see if there is an applicable macro for the given name
 	int expanded = 0;
 	int m_param = 0;
-	char *m_name = (s != NULL) ? s->name : NULL;
-	char *m_exp = (s != NULL) ? s->mac_exp : NULL;
+	symbol *s = symtable_search(&lx->stb, ident);
+	m_name = (s != NULL) ? s->name : NULL;
+	m_exp = (s != NULL) ? s->mac_exp : NULL;
 	for (lex_target *i = tgt; i != NULL; i = i->prev) {
 		//Only check macro contexts
 		if (i->type != TGT_MACRO) continue;

@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include "sym.h"
 #include "err.h"
 #include "util/map.h"
@@ -15,6 +16,30 @@ void symtable_init(symtable *stb) {
 	map_init(&stb->s_global->table, MAP_DEFAULT);
 	stb->s_global->prev = NULL;
 	stb->func = NULL;
+	return;
+}
+
+#define PREDEF_MACRO(STB, NAME, EXP)\
+	symbol *s_##NAME = symtable_def(STB, #NAME, type_new(TYPE_MACRO), NULL);\
+	s_##NAME->mac_exp = EXP;\
+	s_##NAME->is_predef = 1;
+
+void symtable_predef(symtable *stb) {
+	//Get date and time strings
+	static char sdate[16];
+	static char stime[16];
+	time_t c_time = time(NULL);
+	struct tm *l_time = localtime(&c_time);
+	strftime(sdate, 16, "\"%b %d %Y\"", l_time);
+	strftime(stime, 16, "\"%H:%M:%S\"", l_time);
+	
+	//Predefine macros
+	//__FILE__ and __LINE__ macros are implemented in lex_expand_macro
+	PREDEF_MACRO(stb, __DATE__, sdate);
+	PREDEF_MACRO(stb, __STDC__, "1");
+	PREDEF_MACRO(stb, __STDC_HOSTED__, "0");
+	PREDEF_MACRO(stb, __STDC_VERSION__, "199901L");
+	PREDEF_MACRO(stb, __TIME__, stime);
 	return;
 }
 
@@ -126,6 +151,8 @@ symbol *sym_new(char *name, s_type *type) {
 		vector_init(&s->lvars, VECTOR_EMPTY);
 		map_init(&s->labels, MAP_DEFAULT);
 	}
+	s->mac_exp = NULL;
+	s->is_predef = 0;
 
 	//Get base type from chain
 	s_type *bt_ptr = type;
@@ -137,7 +164,7 @@ symbol *sym_new(char *name, s_type *type) {
 }
 
 void sym_del(symbol *s) {
-	if (s->name != NULL)
+	if (s->name != NULL && !s->is_predef)
 		free(s->name);
 	if (s->type != NULL)
 		type_del(s->type);
@@ -153,7 +180,7 @@ void sym_del(symbol *s) {
 	vector_close(&s->lvars);
 	map_close(&s->labels);
 
-	if (s->mac_exp != NULL)
+	if (s->mac_exp != NULL && !s->is_predef)
 		free(s->mac_exp);
 
 	free(s);
